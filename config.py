@@ -12,7 +12,7 @@ BASE_DIR = Path(__file__).parent
 
 # OpenAI Configuration
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = "gpt-4o-mini"
+OPENAI_MODEL = "gpt-4o"
 OPENAI_MAX_RETRIES = 3
 OPENAI_RETRY_DELAY = 1  # seconds
 

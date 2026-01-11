@@ -17,12 +17,7 @@ class CameraCapture:
     and closing the webcam.
     """
     
-    def __init__(
-        self,
-        camera_index: int = None,
-        width: int = None,
-        height: int = None
-    ):
+    def __init__(self, camera_index: int = None, width: int = None, height: int = None):
         """
         Initialize camera capture.
         

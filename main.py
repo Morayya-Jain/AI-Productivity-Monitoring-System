@@ -58,6 +58,7 @@ class FocusTracker:
             print("   Continuing with basic summaries...\n")
         else:
             print("✓ OpenAI API key found")
+            print(f"✓ Using model: {config.OPENAI_MODEL}")
         
         # Check camera availability
         print("✓ Camera access ready")
