@@ -4,7 +4,7 @@ import cv2
 import mediapipe as mp
 import numpy as np
 import logging
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, List
 import math
 import config
 
@@ -28,11 +28,19 @@ class PresenceDetector:
             min_detection_confidence=config.FACE_DETECTION_CONFIDENCE
         )
         
-        # Face mesh for head pose estimation
+        # Face mesh for head pose estimation and eye tracking
         self.mp_face_mesh = mp.solutions.face_mesh
         self.face_mesh = self.mp_face_mesh.FaceMesh(
             max_num_faces=1,
             refine_landmarks=True,
+            min_detection_confidence=0.5,
+            min_tracking_confidence=0.5
+        )
+        
+        # Hands detection for phone-holding gesture
+        self.mp_hands = mp.solutions.hands
+        self.hands = self.mp_hands.Hands(
+            max_num_hands=2,
             min_detection_confidence=0.5,
             min_tracking_confidence=0.5
         )
