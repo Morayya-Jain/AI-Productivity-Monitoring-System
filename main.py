@@ -215,7 +215,8 @@ class GavinAI:
                 stats,
                 summary_data,
                 self.session.session_id,
-                self.session.start_time
+                self.session.start_time,
+                self.session.end_time
             )
             print(f"✓ Report saved: {report_path}")
         except Exception as e:

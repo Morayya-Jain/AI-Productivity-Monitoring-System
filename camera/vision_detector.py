@@ -16,10 +16,13 @@ class VisionDetector:
     """
     Uses OpenAI Vision API (GPT-4o/GPT-4o-mini with vision) to detect:
     - Person presence
-    - Phone usage
+    - Active phone usage (held, looked at, screen on - not just lying on desk)
     - Other distractions
     
     Much more accurate than hardcoded rules!
+    
+    Important: Phone detection only triggers when the phone is being ACTIVELY USED.
+    A phone lying on desk, face-down, or with screen off will NOT be detected.
     """
     
     def __init__(self, api_key: Optional[str] = None, vision_model: str = "gpt-4o-mini"):
@@ -78,11 +81,16 @@ class VisionDetector:
             Dictionary with detection results:
             {
                 "person_present": bool,
-                "phone_visible": bool,
+                "phone_visible": bool (ACTIVE usage only - held, looked at, screen on),
                 "phone_confidence": float (0-1),
                 "distraction_type": str or None,
                 "description": str
             }
+        
+        Note:
+            phone_visible only returns True if person is ACTIVELY using the phone
+            (holding it, looking at it, screen on). A phone lying on desk will NOT
+            be counted as phone usage.
         """
         # Check cache
         current_time = time.time()
@@ -108,10 +116,20 @@ Analyze the image and return this exact JSON format:
   "description": "brief description of what you see"
 }
 
-Be accurate:
-- Only set phone_visible to true if you clearly see a smartphone/mobile phone
+CRITICAL RULES for phone detection:
+- ONLY set phone_visible to true if the person is ACTIVELY USING the phone:
+  * Phone is being HELD in their hands (not just lying on desk)
+  * Person is LOOKING AT the phone screen (not away from it)
+  * Phone screen appears to be ON (not off/black)
+- DO NOT detect as phone usage if:
+  * Phone is lying on desk/table (not being held)
+  * Phone is face-down or screen is off/black
+  * Phone is visible but person is not looking at it
+  * Phone is in pocket/bag
+
+Other rules:
 - Set person_present to true if you see a person's face or body
-- If unsure about phone, set confidence below 0.5
+- If unsure about active phone usage, set confidence below 0.5
 
 Respond with ONLY the JSON object, nothing else."""
             
@@ -218,13 +236,20 @@ Respond with ONLY the JSON object, nothing else."""
     
     def detect_phone_usage(self, frame: np.ndarray) -> bool:
         """
-        Detect if phone is visible using OpenAI Vision.
+        Detect if phone is being ACTIVELY USED (not just visible).
+        
+        Active usage means:
+        - Phone is held in hands
+        - Person is looking at the phone
+        - Screen appears to be on
+        
+        A phone lying on desk or face-down will NOT count as usage.
         
         Args:
             frame: BGR image from camera
             
         Returns:
-            True if phone detected with high confidence, False otherwise
+            True if phone is being actively used with high confidence, False otherwise
         """
         result = self.analyze_frame(frame)
         

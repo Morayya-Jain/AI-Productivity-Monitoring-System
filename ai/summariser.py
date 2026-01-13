@@ -130,6 +130,8 @@ Provide:
 1. A direct, specific summary (2-3 sentences). State facts, be honest, no fluff.
 2. 3 specific, actionable points to improve.
 
+Important: When mentioning time durations, display values less than 1 minute in seconds (e.g., "45 seconds" not "0.75 minutes").
+
 Format as JSON:
 {{
   "summary": "your direct summary",
