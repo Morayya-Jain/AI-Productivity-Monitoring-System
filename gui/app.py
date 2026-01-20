@@ -305,6 +305,236 @@ class RoundedButton(tk.Canvas):
         self._draw_button()
 
 
+class RoundedBadge(tk.Canvas):
+    """
+    A non-interactive badge with rounded corners.
+    
+    Used for displaying status information like time remaining.
+    Supports dynamic text and background color updates.
+    """
+    
+    def __init__(
+        self,
+        parent,
+        text: str,
+        bg_color: str,
+        fg_color: str = "#FFFFFF",
+        font: tkfont.Font = None,
+        corner_radius: int = 10,
+        padx: int = 16,
+        pady: int = 6,
+        clickable: bool = False,
+        hover_color: str = None,
+        **kwargs
+    ):
+        """
+        Initialize rounded badge.
+        
+        Args:
+            parent: Parent widget
+            text: Badge text
+            bg_color: Background color
+            fg_color: Text color
+            font: Text font
+            corner_radius: Corner radius
+            padx, pady: Internal padding
+            clickable: Whether badge responds to clicks
+            hover_color: Color on hover (only if clickable)
+        """
+        self.text = text
+        self.bg_color = bg_color
+        self.fg_color = fg_color
+        self.badge_font = font
+        self.corner_radius = corner_radius
+        self.padx = padx
+        self.pady = pady
+        self.clickable = clickable
+        self.hover_color = hover_color or bg_color
+        self._current_bg = bg_color
+        self._click_callback = None
+        
+        # Get parent background
+        parent_bg = parent.cget("bg") if hasattr(parent, "cget") else COLORS["bg_dark"]
+        
+        super().__init__(parent, highlightthickness=0, bg=parent_bg, **kwargs)
+        
+        # Bind resize
+        self.bind("<Configure>", self._on_resize)
+        
+        # Bind hover/click if clickable
+        if clickable:
+            self.bind("<Enter>", self._on_enter)
+            self.bind("<Leave>", self._on_leave)
+            self.bind("<Button-1>", self._on_click)
+    
+    def _on_resize(self, event=None):
+        """Redraw badge on resize."""
+        self._draw_badge()
+    
+    def _draw_badge(self):
+        """Draw the badge with current state."""
+        self.delete("all")
+        
+        width = self.winfo_width()
+        height = self.winfo_height()
+        
+        if width > 1 and height > 1:
+            # Draw rounded rectangle background
+            radius = min(self.corner_radius, width // 4, height // 2)
+            
+            points = [
+                radius, 0,
+                width - radius, 0,
+                width, 0,
+                width, radius,
+                width, height - radius,
+                width, height,
+                width - radius, height,
+                radius, height,
+                0, height,
+                0, height - radius,
+                0, radius,
+                0, 0,
+            ]
+            
+            self.create_polygon(
+                points,
+                fill=self._current_bg,
+                smooth=True,
+                tags="bg"
+            )
+            
+            # Draw text
+            self.create_text(
+                width // 2,
+                height // 2,
+                text=self.text,
+                fill=self.fg_color,
+                font=self.badge_font,
+                tags="text"
+            )
+    
+    def _on_enter(self, event):
+        """Mouse enter - show hover state."""
+        if self.clickable:
+            self._current_bg = self.hover_color
+            self._draw_badge()
+    
+    def _on_leave(self, event):
+        """Mouse leave - restore normal state."""
+        if self.clickable:
+            self._current_bg = self.bg_color
+            self._draw_badge()
+    
+    def _on_click(self, event):
+        """Handle click."""
+        if self.clickable and self._click_callback:
+            self._click_callback(event)
+    
+    def bind_click(self, callback):
+        """Bind a callback to badge click."""
+        self._click_callback = callback
+    
+    def configure_badge(self, **kwargs):
+        """
+        Configure badge properties.
+        
+        Args:
+            text: New badge text
+            bg_color: New background color
+        """
+        if "text" in kwargs:
+            self.text = kwargs["text"]
+        if "bg_color" in kwargs:
+            self.bg_color = kwargs["bg_color"]
+            self._current_bg = kwargs["bg_color"]
+        
+        self._draw_badge()
+
+
+class Tooltip:
+    """
+    A tooltip that appears when hovering over a widget.
+    
+    Shows full text on hover, similar to browser tab tooltips.
+    """
+    
+    def __init__(self, widget, text: str = "", bg: str = "#1E293B", fg: str = "#F1F5F9"):
+        """
+        Initialize tooltip for a widget.
+        
+        Args:
+            widget: The widget to attach tooltip to
+            text: Tooltip text (can be updated later)
+            bg: Background color
+            fg: Text color
+        """
+        self.widget = widget
+        self.text = text
+        self.bg = bg
+        self.fg = fg
+        self.tooltip_window = None
+        
+        # Bind hover events
+        self.widget.bind("<Enter>", self._show_tooltip)
+        self.widget.bind("<Leave>", self._hide_tooltip)
+        self.widget.bind("<Motion>", self._move_tooltip)
+    
+    def update_text(self, text: str):
+        """Update the tooltip text."""
+        self.text = text
+        # If tooltip is currently showing, update it
+        if self.tooltip_window:
+            for child in self.tooltip_window.winfo_children():
+                if isinstance(child, tk.Label):
+                    child.config(text=text)
+    
+    def _show_tooltip(self, event=None):
+        """Show the tooltip window."""
+        if not self.text:
+            return
+        
+        # Create tooltip window
+        self.tooltip_window = tk.Toplevel(self.widget)
+        self.tooltip_window.wm_overrideredirect(True)  # No window decorations
+        self.tooltip_window.wm_attributes("-topmost", True)
+        
+        # Position near the widget
+        x = self.widget.winfo_rootx() + 10
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 5
+        self.tooltip_window.wm_geometry(f"+{x}+{y}")
+        
+        # Create tooltip content with padding
+        frame = tk.Frame(self.tooltip_window, bg=self.bg, bd=1, relief="solid")
+        frame.pack()
+        
+        label = tk.Label(
+            frame,
+            text=self.text,
+            bg=self.bg,
+            fg=self.fg,
+            font=("SF Pro Display", 11),
+            padx=8,
+            pady=4,
+            wraplength=400,  # Wrap long text
+            justify="left"
+        )
+        label.pack()
+    
+    def _hide_tooltip(self, event=None):
+        """Hide the tooltip window."""
+        if self.tooltip_window:
+            self.tooltip_window.destroy()
+            self.tooltip_window = None
+    
+    def _move_tooltip(self, event=None):
+        """Move tooltip to follow mouse."""
+        if self.tooltip_window:
+            x = self.widget.winfo_rootx() + 10
+            y = self.widget.winfo_rooty() + self.widget.winfo_height() + 5
+            self.tooltip_window.wm_geometry(f"+{x}+{y}")
+
+
 class NotificationPopup:
     """
     A floating notification popup that appears on top of all windows.
@@ -787,12 +1017,17 @@ class GavinGUI:
         if abs(new_scale - self.current_scale) > 0.05:
             self.current_scale = new_scale
             
-            # Scale button proportionally (but keep minimum size)
+            # Scale buttons proportionally (but keep minimum size)
+            new_btn_width = max(160, int(180 * new_scale))
+            new_btn_height = max(46, int(52 * new_scale))
+            
             if hasattr(self, 'start_stop_btn'):
-                new_btn_width = max(160, int(180 * new_scale))
-                new_btn_height = max(46, int(52 * new_scale))
                 self.start_stop_btn.configure(width=new_btn_width, height=new_btn_height)
                 self.start_stop_btn._draw_button()
+            
+            if hasattr(self, 'pause_btn'):
+                self.pause_btn.configure(width=new_btn_width, height=new_btn_height)
+                self.pause_btn._draw_button()
             
             # Scale status card height proportionally
             if hasattr(self, 'status_card'):
@@ -866,17 +1101,23 @@ class GavinGUI:
         self.time_badge_frame = tk.Frame(title_frame, bg=COLORS["bg_dark"])
         self.time_badge_frame.pack(pady=(10, 0))
         
-        self.time_badge = tk.Label(
+        # Rounded badge for time remaining - looks like other buttons
+        self.time_badge = RoundedBadge(
             self.time_badge_frame,
             text="2h 0m left",
+            bg_color=COLORS["time_badge"],
+            hover_color="#9D7AFA",  # Slightly lighter purple on hover
+            fg_color=COLORS["text_white"],
             font=self.font_badge,
-            fg=COLORS["text_white"],
-            bg=COLORS["time_badge"],
-            padx=12,
-            pady=4,
+            corner_radius=10,
+            padx=16,
+            pady=6,
+            clickable=True,
+            width=110,
+            height=32
         )
         self.time_badge.pack()
-        self.time_badge.bind("<Button-1>", self._show_usage_details)
+        self.time_badge.bind_click(self._show_usage_details)
         
         # Lockout overlay (hidden by default)
         self.lockout_frame: Optional[tk.Frame] = None
@@ -1006,8 +1247,8 @@ class GavinGUI:
         
         modes = [
             (config.MODE_CAMERA_ONLY, "📷 Camera"),
-            (config.MODE_SCREEN_ONLY, "🖥 Screen"),
-            (config.MODE_BOTH, "📷+🖥 Both"),
+            (config.MODE_SCREEN_ONLY, "💻 Screen"),
+            (config.MODE_BOTH, "📷 + 💻 Both"),
         ]
         
         self.mode_buttons = {}
@@ -1081,19 +1322,19 @@ class GavinGUI:
         
         Allows users to enable/disable preset categories and add custom patterns.
         """
-        # Create settings window
+        # Create settings window (larger to accommodate separate URL/App fields)
         settings_window = tk.Toplevel(self.root)
         settings_window.title("Blocklist Settings")
         settings_window.configure(bg=COLORS["bg_dark"])
-        settings_window.geometry("400x580")
+        settings_window.geometry("420x700")
         settings_window.resizable(False, False)
         
         # Center on parent window
         settings_window.transient(self.root)
         settings_window.grab_set()
         
-        x = self.root.winfo_x() + (self.root.winfo_width() - 400) // 2
-        y = self.root.winfo_y() + (self.root.winfo_height() - 580) // 2
+        x = self.root.winfo_x() + (self.root.winfo_width() - 420) // 2
+        y = self.root.winfo_y() + (self.root.winfo_height() - 700) // 2
         settings_window.geometry(f"+{x}+{y}")
         
         # Main container with padding
@@ -1169,43 +1410,107 @@ class GavinGUI:
             desc.bind("<Enter>", lambda e, lbl=desc: lbl.configure(fg=COLORS["accent_warm"]))
             desc.bind("<Leave>", lambda e, lbl=desc: lbl.configure(fg=COLORS["accent_primary"]))
         
-        # Custom patterns section
-        custom_label = tk.Label(
+        # --- Custom URLs section ---
+        urls_label = tk.Label(
             main_container,
-            text="Custom Patterns",
+            text="Custom URLs/Domains",
             font=self.font_status,
             fg=COLORS["text_primary"],
             bg=COLORS["bg_dark"]
         )
-        custom_label.pack(anchor="w", pady=(10, 5))
+        urls_label.pack(anchor="w", pady=(10, 2))
         
-        custom_help = tk.Label(
+        urls_help = tk.Label(
             main_container,
-            text="Add URLs or app names to block (one per line)",
+            text="Add website URLs to block (e.g., example.com)",
             font=self.font_small,
             fg=COLORS["text_secondary"],
             bg=COLORS["bg_dark"]
         )
-        custom_help.pack(anchor="w")
+        urls_help.pack(anchor="w")
         
-        # Custom patterns text area
-        custom_frame = tk.Frame(main_container, bg=COLORS["bg_medium"])
-        custom_frame.pack(fill=tk.X, pady=(5, 15))
+        # URLs text area with validation feedback
+        urls_frame = tk.Frame(main_container, bg=COLORS["bg_medium"])
+        urls_frame.pack(fill=tk.X, pady=(3, 5))
         
-        self.custom_text = tk.Text(
-            custom_frame,
+        self.custom_urls_text = tk.Text(
+            urls_frame,
             font=self.font_small,
             fg=COLORS["text_primary"],
             bg=COLORS["bg_medium"],
             insertbackground=COLORS["text_primary"],
-            height=5,
+            height=3,
             wrap=tk.WORD
         )
-        self.custom_text.pack(fill=tk.X, padx=5, pady=5)
+        self.custom_urls_text.pack(fill=tk.X, padx=5, pady=5)
         
-        # Populate with current custom patterns
-        if self.blocklist.custom_patterns:
-            self.custom_text.insert("1.0", "\n".join(self.blocklist.custom_patterns))
+        # URL validation status label with tooltip for full message
+        self.url_validation_label = tk.Label(
+            main_container,
+            text="",
+            font=self.font_small,
+            fg=COLORS["text_secondary"],
+            bg=COLORS["bg_dark"],
+        )
+        self.url_validation_label.pack(anchor="w")
+        self.url_validation_tooltip = Tooltip(self.url_validation_label, "")
+        
+        # Populate with current custom URLs
+        if self.blocklist.custom_urls:
+            self.custom_urls_text.insert("1.0", "\n".join(self.blocklist.custom_urls))
+        
+        # --- Custom Apps section ---
+        apps_label = tk.Label(
+            main_container,
+            text="Custom App Names",
+            font=self.font_status,
+            fg=COLORS["text_primary"],
+            bg=COLORS["bg_dark"]
+        )
+        apps_label.pack(anchor="w", pady=(8, 2))
+        
+        apps_help = tk.Label(
+            main_container,
+            text="Add desktop app names to block (e.g., Steam, Discord)",
+            font=self.font_small,
+            fg=COLORS["text_secondary"],
+            bg=COLORS["bg_dark"]
+        )
+        apps_help.pack(anchor="w")
+        
+        # Apps text area with validation feedback
+        apps_frame = tk.Frame(main_container, bg=COLORS["bg_medium"])
+        apps_frame.pack(fill=tk.X, pady=(3, 5))
+        
+        self.custom_apps_text = tk.Text(
+            apps_frame,
+            font=self.font_small,
+            fg=COLORS["text_primary"],
+            bg=COLORS["bg_medium"],
+            insertbackground=COLORS["text_primary"],
+            height=3,
+            wrap=tk.WORD
+        )
+        self.custom_apps_text.pack(fill=tk.X, padx=5, pady=5)
+        
+        # App validation status label with tooltip for full message
+        self.app_validation_label = tk.Label(
+            main_container,
+            text="",
+            font=self.font_small,
+            fg=COLORS["text_secondary"],
+            bg=COLORS["bg_dark"],
+        )
+        self.app_validation_label.pack(anchor="w")
+        self.app_validation_tooltip = Tooltip(self.app_validation_label, "")
+        
+        # Populate with current custom apps
+        if self.blocklist.custom_apps:
+            self.custom_apps_text.insert("1.0", "\n".join(self.blocklist.custom_apps))
+        
+        # Bind validation on text change (for real-time feedback)
+        self.custom_urls_text.bind("<KeyRelease>", lambda e: self._validate_urls_realtime())
+        self.custom_apps_text.bind("<KeyRelease>", lambda e: self._validate_apps_realtime())
         
         # AI Fallback option (advanced) - OFF BY DEFAULT
         ai_frame = tk.Frame(main_container, bg=COLORS["bg_dark"])
@@ -1379,9 +1684,682 @@ class GavinGUI:
         # Also close on Escape key
         sites_popup.bind("<Escape>", lambda e: close_popup())
     
+    # Common TLDs for URL validation (expandable list)
+    VALID_TLDS = {
+        # Generic TLDs
+        'com', 'org', 'net', 'edu', 'gov', 'mil', 'int',
+        # Popular newer TLDs
+        'io', 'co', 'app', 'dev', 'ai', 'me', 'tv', 'gg', 'xyz', 'info', 'biz',
+        'online', 'site', 'tech', 'cloud', 'pro', 'store', 'shop', 'blog',
+        # Country codes (common ones)
+        'uk', 'us', 'ca', 'au', 'de', 'fr', 'jp', 'cn', 'in', 'br', 'ru',
+        'es', 'it', 'nl', 'se', 'no', 'fi', 'dk', 'pl', 'cz', 'at', 'ch',
+        'be', 'ie', 'nz', 'za', 'mx', 'ar', 'cl', 'kr', 'tw', 'hk', 'sg',
+        # Common compound TLDs
+        'co.uk', 'com.au', 'co.nz', 'co.jp', 'com.br', 'co.in',
+    }
+    
+    # Comprehensive list of known desktop applications for validation
+    # Apps in this list are auto-accepted; unknown apps trigger a warning
+    KNOWN_APPS = {
+        # ==================== GAMING PLATFORMS & LAUNCHERS ====================
+        'steam', 'steam client', 'steam client bootstrapper', 'steam client webhelper',
+        'epic games', 'epic games launcher', 'epicgameslauncher',
+        'gog galaxy', 'gog', 'gog galaxy 2.0',
+        'battle.net', 'blizzard battle.net', 'blizzard',
+        'origin', 'ea app', 'ea desktop', 'ea play',
+        'ubisoft connect', 'uplay', 'ubisoft',
+        'xbox', 'xbox app', 'xbox game bar', 'xbox console companion',
+        'playstation', 'playstation now', 'ps now', 'ps remote play',
+        'rockstar games launcher', 'rockstar launcher', 'social club',
+        'riot client', 'riot games',
+        'bethesda.net launcher', 'bethesda launcher',
+        'amazon games', 'amazon luna',
+        'itch.io', 'itch',
+        'humble app', 'humble bundle',
+        'geforce now', 'nvidia geforce now',
+        'parsec', 'moonlight', 'steam link',
+        'playnite', 'launchbox', 'gog galaxy',
+        
+        # ==================== POPULAR PC GAMES (A-Z) ====================
+        # A
+        'age of empires', 'age of empires ii', 'age of empires iii', 'age of empires iv',
+        'alan wake', 'alan wake 2', 'alien isolation',
+        'among us', 'amnesia', 'anno 1800', 'anthem',
+        'apex legends', 'ark survival evolved', 'ark survival ascended',
+        'arma 3', 'armored core vi', 'assassins creed', 'assassin\'s creed',
+        'ashes of creation', 'astroneer', 'atlas',
+        # B
+        'baldurs gate', 'baldur\'s gate', 'baldurs gate 3', 'baldur\'s gate 3',
+        'battlefield', 'battlefield 2042', 'battlefield v', 'battlefield 1',
+        'beat saber', 'besiege', 'bioshock', 'bioshock infinite',
+        'black desert', 'black desert online', 'bdo',
+        'black myth wukong', 'blasphemous', 'brawlhalla',
+        'borderlands', 'borderlands 3', 'borderlands 2',
+        # C
+        'call of duty', 'cod', 'warzone', 'warzone 2', 'modern warfare', 'mw2', 'mw3',
+        'call of duty black ops', 'black ops', 'cold war',
+        'candy crush', 'celeste', 'chivalry 2',
+        'cities skylines', 'cities skylines ii', 'cities skylines 2',
+        'civilization', 'civilization vi', 'civilization v', 'civ 6', 'civ 5', 'sid meiers civilization',
+        'control', 'counter-strike', 'counter strike', 'cs2', 'csgo', 'cs go', 'cs:go',
+        'crash bandicoot', 'crysis', 'cuphead', 'cyberpunk', 'cyberpunk 2077',
+        # D
+        'dark souls', 'dark souls iii', 'dark souls remastered', 'dark souls 3',
+        'dayz', 'dead by daylight', 'dead cells', 'dead island', 'dead space',
+        'death stranding', 'deep rock galactic', 'destiny', 'destiny 2',
+        'detroit become human', 'deus ex', 'devil may cry', 'dmc5',
+        'diablo', 'diablo iv', 'diablo iii', 'diablo ii', 'diablo 4', 'diablo 3', 'diablo 2',
+        'dirt rally', 'disco elysium', 'dishonored', 'divinity original sin',
+        'doom', 'doom eternal', 'dota', 'dota 2', 'dragon age', 'dying light',
+        # E
+        'elden ring', 'elite dangerous', 'escape from tarkov', 'tarkov',
+        'euro truck simulator', 'ets2', 'eve online',
+        # F
+        'factorio', 'fallout', 'fallout 4', 'fallout 76', 'fallout new vegas',
+        'far cry', 'far cry 6', 'far cry 5', 'farming simulator', 'fs22', 'fs25',
+        'fifa', 'fifa 24', 'ea sports fc', 'fc 24', 'fc 25',
+        'final fantasy', 'final fantasy xiv', 'ffxiv', 'ff14', 'final fantasy xvi',
+        'flight simulator', 'microsoft flight simulator', 'msfs', 'msfs 2020',
+        'for honor', 'fortnite', 'forza', 'forza horizon', 'forza horizon 5', 'forza motorsport',
+        'frostpunk', 'frostpunk 2',
+        # G
+        'genshin impact', 'genshin', 'ghost of tsushima', 'ghostwire tokyo',
+        'god of war', 'gow', 'godfall', 'gotham knights',
+        'grand theft auto', 'gta', 'gta v', 'gta 5', 'gta iv', 'gta online', 'gta vi',
+        'grounded', 'guild wars', 'guild wars 2', 'gw2',
+        # H
+        'hades', 'hades ii', 'hades 2', 'half-life', 'half life', 'half-life 2', 'half-life alyx',
+        'halo', 'halo infinite', 'halo master chief collection', 'halo mcc',
+        'hearts of iron', 'hoi4', 'hearts of iron iv', 'helldivers', 'helldivers 2',
+        'heroes of the storm', 'hots', 'hi-fi rush', 'hitman', 'hitman 3',
+        'hogwarts legacy', 'hollow knight', 'silksong', 'honkai star rail', 'hsr',
+        'horizon zero dawn', 'horizon forbidden west', 'hunt showdown',
+        # I
+        'insurgency', 'insurgency sandstorm', 'it takes two',
+        # J
+        'just cause', 'just cause 4',
+        # K
+        'kenshi', 'kerbal space program', 'ksp', 'ksp2', 'kingdom come deliverance',
+        'knockout city',
+        # L
+        'last epoch', 'league of legends', 'lol', 'left 4 dead', 'l4d2',
+        'lego star wars', 'lethal company', 'lies of p',
+        'life is strange', 'little nightmares', 'lost ark',
+        # M
+        'madden', 'madden nfl', 'manor lords', 'marvel snap',
+        'marvels spider-man', 'spider-man', 'mass effect', 'mass effect legendary',
+        'medal of honor', 'metro exodus', 'minecraft', 'minecraft java', 'minecraft bedrock',
+        'minecraft dungeons', 'monster hunter', 'monster hunter world', 'monster hunter rise',
+        'mordhau', 'mortal kombat', 'mk11', 'mk1', 'mount and blade', 'bannerlord',
+        # N
+        'naraka bladepoint', 'nba 2k', 'nba 2k24', 'nba 2k25',
+        'need for speed', 'nfs', 'nfs heat', 'nfs unbound',
+        'new world', 'nier automata', 'nier replicant', 'nioh', 'nioh 2',
+        'no mans sky', 'no man\'s sky',
+        # O
+        'osu', 'osu!', 'outer wilds', 'outlast', 'overwatch', 'overwatch 2', 'ow2',
+        # P
+        'paladins', 'palworld', 'path of exile', 'poe', 'poe 2', 'path of exile 2',
+        'payday', 'payday 2', 'payday 3', 'persona', 'persona 5', 'persona 3',
+        'phantasy star online', 'pso2', 'phasmophobia',
+        'pillars of eternity', 'planet coaster', 'planet zoo',
+        'playerunknowns battlegrounds', 'pubg', 'portal', 'portal 2',
+        'prey', 'project zomboid', 'pyre',
+        # R
+        'rainbow six', 'rainbow six siege', 'r6', 'r6s', 'ready or not',
+        'red dead redemption', 'red dead redemption 2', 'rdr2', 'red dead online',
+        'remnant', 'remnant 2', 'remnant from the ashes',
+        'resident evil', 're4', 'resident evil 4', 'resident evil village',
+        'returnal', 'rimworld', 'ring of elysium', 'risk of rain', 'risk of rain 2',
+        'roblox', 'rocket league', 'rust',
+        # S
+        'satisfactory', 'scarlet nexus', 'sea of thieves', 'sekiro',
+        'shadow of the tomb raider', 'shatterline', 'sifu',
+        'sim city', 'simcity', 'sims', 'the sims', 'sims 4', 'the sims 4',
+        'ski safari', 'skyrim', 'elder scrolls', 'elder scrolls online', 'eso',
+        'slime rancher', 'smite', 'sniper elite',
+        'snowrunner', 'sons of the forest', 'soulcalibur', 'space engineers',
+        'spellbreak', 'spider-man remastered', 'spiritfarer', 'spore',
+        'squad', 'star citizen', 'star wars battlefront', 'star wars jedi',
+        'starcraft', 'starcraft 2', 'sc2', 'starfield', 'stardew valley',
+        'stellaris', 'stray', 'street fighter', 'sf6', 'street fighter 6',
+        'subnautica', 'suicide squad', 'super people', 'surviving mars',
+        # T
+        'tales of arise', 'team fortress', 'tf2', 'team fortress 2',
+        'tekken', 'tekken 8', 'terraria', 'the binding of isaac', 'isaac',
+        'the crew', 'the division', 'division 2', 'the elder scrolls',
+        'the finals', 'the forest', 'the outer worlds',
+        'the quarry', 'the surge', 'the walking dead', 'the witcher',
+        'witcher', 'witcher 3', 'the witcher 3', 'titanfall', 'titanfall 2',
+        'tomb raider', 'torchlight', 'total war', 'total war warhammer',
+        'trackmania', 'tribes', 'tropico', 'tunic', 'two point hospital',
+        # U
+        'ultrakill', 'undertale', 'unravel',
+        # V
+        'v rising', 'valheim', 'valorant', 'vampire survivors',
+        'vampyr', 'vermintide', 'vermintide 2', 'vigor',
+        # W
+        'warframe', 'warhammer', 'warhammer 40000', 'warhammer vermintide',
+        'warthunder', 'war thunder', 'watch dogs', 'watch dogs 2', 'watch dogs legion',
+        'waven', 'wolfenstein', 'world of tanks', 'wot',
+        'world of warcraft', 'wow', 'world of warships', 'wows', 'wwe 2k',
+        # X
+        'xcom', 'xcom 2',
+        # Y
+        'yakuza', 'like a dragon',
+        # Z
+        'zenless zone zero', 'zzz', 'zombie army',
+        
+        # ==================== NINTENDO GAMES (Popular on PC via emulation) ====================
+        'nintendo switch', 'switch', 'yuzu', 'ryujinx', 'cemu', 'dolphin',
+        'zelda', 'breath of the wild', 'tears of the kingdom', 'totk', 'botw',
+        'mario', 'super mario', 'mario kart', 'mario odyssey',
+        'pokemon', 'pokémon', 'animal crossing', 'splatoon', 'smash bros',
+        'super smash bros', 'metroid', 'metroid dread', 'fire emblem',
+        'kirby', 'luigi mansion', 'paper mario', 'xenoblade',
+        
+        # ==================== COMMUNICATION & MESSAGING ====================
+        'discord', 'slack', 'microsoft teams', 'teams', 'zoom', 'zoom meeting',
+        'skype', 'skype for business', 'google meet', 'google chat',
+        'whatsapp', 'whatsapp desktop', 'telegram', 'telegram desktop',
+        'signal', 'signal desktop', 'messenger', 'facebook messenger',
+        'wechat', 'weixin', 'line', 'viber', 'kakaotalk',
+        'element', 'matrix', 'mattermost', 'rocket.chat', 'zulip',
+        'webex', 'cisco webex', 'gotomeeting', 'goto meeting',
+        'bluejeans', 'ring central', 'flock', 'twist', 'chanty',
+        'facetime', 'imessage', 'messages', 'mail',
+        
+        # ==================== WEB BROWSERS ====================
+        'chrome', 'google chrome', 'google', 'firefox', 'mozilla firefox',
+        'safari', 'microsoft edge', 'edge', 'opera', 'opera gx',
+        'brave', 'brave browser', 'vivaldi', 'arc', 'arc browser',
+        'chromium', 'tor', 'tor browser', 'waterfox', 'librewolf',
+        'duckduckgo', 'duckduckgo browser', 'samsung internet',
+        'maxthon', 'uc browser', 'yandex browser', 'orion',
+        'floorp', 'zen browser', 'thorium',
+        
+        # ==================== PRODUCTIVITY & OFFICE ====================
+        # Microsoft Office
+        'microsoft word', 'word', 'microsoft excel', 'excel',
+        'microsoft powerpoint', 'powerpoint', 'microsoft outlook', 'outlook',
+        'microsoft onenote', 'onenote', 'microsoft access', 'access',
+        'microsoft publisher', 'publisher', 'microsoft project', 'project',
+        'microsoft visio', 'visio', 'microsoft 365', 'office 365', 'office',
+        # Google Workspace
+        'google docs', 'google sheets', 'google slides', 'google drive',
+        'google calendar', 'google keep', 'google forms', 'google sites',
+        # Apple iWork
+        'pages', 'numbers', 'keynote', 'notes', 'reminders', 'calendar',
+        # LibreOffice
+        'libreoffice', 'libreoffice writer', 'libreoffice calc',
+        'libreoffice impress', 'libreoffice draw', 'libreoffice base',
+        # Other office suites
+        'openoffice', 'wps office', 'wps', 'onlyoffice', 'calligra',
+        'softmaker office', 'freeoffice', 'polaris office',
+        
+        # ==================== NOTE-TAKING & KNOWLEDGE MANAGEMENT ====================
+        'notion', 'obsidian', 'evernote', 'bear', 'apple notes',
+        'roam research', 'roam', 'logseq', 'craft', 'ulysses',
+        'notability', 'goodnotes', 'simplenote', 'standard notes',
+        'joplin', 'trilium', 'anytype', 'mem', 'reflect',
+        'remnote', 'tana', 'capacities', 'heptabase', 'scrintal',
+        'workflowy', 'dynalist', 'mindnode', 'mindmeister', 'xmind',
+        'miro', 'mural', 'figjam', 'whimsical', 'lucidchart',
+        'ia writer', 'byword', 'writeroom', 'scrivener', 'final draft',
+        
+        # ==================== TASK & PROJECT MANAGEMENT ====================
+        'todoist', 'things', 'things 3', 'omnifocus', 'ticktick',
+        'any.do', 'microsoft to do', 'to do', 'reminders',
+        'trello', 'asana', 'monday', 'monday.com', 'clickup',
+        'jira', 'linear', 'height', 'shortcut', 'clubhouse',
+        'basecamp', 'wrike', 'smartsheet', 'teamwork', 'airtable',
+        'notion calendar', 'fantastical', 'busycal', 'calendly',
+        'clockify', 'toggl', 'toggl track', 'harvest', 'everhour',
+        'rescuetime', 'time doctor', 'desktime', 'timely',
+        
+        # ==================== DEVELOPMENT & CODING ====================
+        # IDEs & Editors
+        'visual studio', 'visual studio code', 'vs code', 'vscode', 'code',
+        'xcode', 'intellij', 'intellij idea', 'pycharm', 'webstorm',
+        'phpstorm', 'rubymine', 'rider', 'clion', 'goland', 'datagrip',
+        'android studio', 'eclipse', 'netbeans', 'codeblocks', 'code blocks',
+        'sublime text', 'sublime', 'atom', 'brackets', 'notepad++',
+        'vim', 'neovim', 'nvim', 'emacs', 'spacemacs', 'doom emacs',
+        'nano', 'bbedit', 'textmate', 'coda', 'nova', 'zed',
+        'fleet', 'lapce', 'helix', 'cursor', 'windsurf',
+        # Terminals
+        'terminal', 'iterm', 'iterm2', 'hyper', 'warp', 'alacritty',
+        'kitty', 'wezterm', 'tabby', 'terminus', 'windows terminal',
+        'powershell', 'cmd', 'command prompt', 'git bash', 'cmder',
+        'putty', 'moba xterm', 'mobaxterm', 'securecrt', 'zssh',
+        # Version Control
+        'github', 'github desktop', 'gitkraken', 'sourcetree', 'fork',
+        'tower', 'git', 'git gui', 'gitx', 'smartgit', 'sublime merge',
+        'gitlab', 'bitbucket', 'azure devops', 'gitea', 'gogs',
+        # Database Tools
+        'dbeaver', 'tableplus', 'sequel pro', 'sequel ace', 'datagrip',
+        'navicat', 'heidisql', 'mysql workbench', 'pgadmin', 'mongodb compass',
+        'redis desktop', 'redisinsight', 'robo 3t', 'studio 3t',
+        'sqlitebrowser', 'db browser', 'adminer', 'phpmyadmin',
+        'azure data studio', 'sql server management studio', 'ssms',
+        # API & Debugging
+        'postman', 'insomnia', 'paw', 'hoppscotch', 'httpie',
+        'charles', 'charles proxy', 'fiddler', 'wireshark', 'proxyman',
+        'rest client', 'thunder client', 'rapidapi',
+        # Containers & DevOps
+        'docker', 'docker desktop', 'podman', 'rancher', 'portainer',
+        'kubernetes', 'minikube', 'lens', 'k9s', 'kubectl',
+        'vagrant', 'virtualbox', 'vmware', 'vmware fusion', 'parallels',
+        'terraform', 'ansible', 'jenkins', 'circleci', 'github actions',
+        # Other Dev Tools
+        'figma', 'sketch', 'zeplin', 'abstract', 'invision',
+        'storybook', 'chromatic', 'percy', 'browserstack',
+        'ngrok', 'localtunnel', 'tailscale', 'zerotier',
+        
+        # ==================== DESIGN & CREATIVE ====================
+        # Adobe Creative Cloud
+        'photoshop', 'adobe photoshop', 'illustrator', 'adobe illustrator',
+        'indesign', 'adobe indesign', 'premiere', 'premiere pro', 'adobe premiere',
+        'after effects', 'adobe after effects', 'animate', 'adobe animate',
+        'dreamweaver', 'adobe dreamweaver', 'xd', 'adobe xd',
+        'lightroom', 'adobe lightroom', 'lightroom classic',
+        'audition', 'adobe audition', 'character animator',
+        'dimension', 'adobe dimension', 'fresco', 'adobe fresco',
+        'acrobat', 'adobe acrobat', 'acrobat reader', 'adobe reader',
+        'bridge', 'adobe bridge', 'media encoder', 'adobe media encoder',
+        'substance', 'substance painter', 'substance designer',
+        'creative cloud', 'adobe creative cloud',
+        # Affinity
+        'affinity designer', 'affinity photo', 'affinity publisher',
+        # Other Design
+        'figma', 'sketch', 'canva', 'gimp', 'inkscape', 'krita',
+        'coreldraw', 'corel painter', 'paintshop pro', 'paint.net',
+        'pixelmator', 'pixelmator pro', 'procreate', 'procreate dreams',
+        'vectornator', 'linearity curve', 'gravit designer', 'lunacy',
+        'penpot', 'mypaint', 'artrage', 'clip studio', 'clip studio paint',
+        'medibang', 'fire alpaca', 'sai', 'paint tool sai',
+        'aseprite', 'piskel', 'pyxel edit', 'graphics gale',
+        # 3D & Motion
+        'blender', 'cinema 4d', 'c4d', 'maya', 'autodesk maya',
+        '3ds max', 'autodesk 3ds max', 'houdini', 'zbrush', 'mudbox',
+        'modo', 'lightwave', 'sketchup', 'rhino', 'rhinoceros',
+        'fusion 360', 'solidworks', 'autocad', 'revit',
+        'unreal engine', 'unreal editor', 'unity', 'unity hub',
+        'godot', 'godot engine', 'gamemaker', 'game maker studio',
+        'rpg maker', 'construct', 'defold', 'cocos',
+        'twinmotion', 'lumion', 'enscape', 'v-ray', 'keyshot',
+        'marvelous designer', 'substance 3d', 'spline', 'cavalry',
+        'rive', 'lottie', 'bodymovin', 'principle', 'origami studio',
+        
+        # ==================== VIDEO & STREAMING ====================
+        # Video Editing
+        'final cut', 'final cut pro', 'imovie', 'davinci resolve', 'davinci',
+        'premiere pro', 'premiere rush', 'avid', 'avid media composer',
+        'hitfilm', 'filmora', 'wondershare filmora', 'camtasia',
+        'screenflow', 'movavi', 'vegas pro', 'sony vegas', 'magix vegas',
+        'openshot', 'shotcut', 'kdenlive', 'olive', 'lightworks',
+        'kapwing', 'clipchamp', 'veed', 'descript', 'riverside',
+        # Screen Recording & Streaming
+        'obs', 'obs studio', 'streamlabs', 'streamlabs obs', 'slobs',
+        'xsplit', 'xsplit broadcaster', 'vmix', 'wirecast',
+        'streamelements', 'twitch studio', 'lightstream',
+        'loom', 'screencastify', 'screenpal', 'snagit', 'droplr',
+        'cleanshot', 'cleanshot x', 'monosnap', 'lightshot', 'greenshot',
+        'kap', 'gif brewery', 'giphy capture', 'licecap', 'screentogif',
+        'nvidia shadowplay', 'shadowplay', 'geforce experience',
+        'amd relive', 'radeon software', 'xbox game bar',
+        # Media Players
+        'vlc', 'vlc media player', 'iina', 'mpv', 'mpc-hc',
+        'pot player', 'potplayer', 'kmplayer', 'gom player',
+        'quicktime', 'quicktime player', 'windows media player',
+        'plex', 'plex media player', 'kodi', 'jellyfin', 'emby',
+        'infuse', 'movist', 'elmedia', 'mplayerx',
+        # Video Streaming Apps
+        'netflix', 'youtube', 'youtube music', 'amazon prime video', 'prime video',
+        'disney+', 'disney plus', 'hulu', 'hbo max', 'max',
+        'apple tv', 'apple tv+', 'peacock', 'paramount+', 'paramount plus',
+        'crunchyroll', 'funimation', 'hidive', 'vrv',
+        'twitch', 'twitch app', 'kick', 'rumble',
+        'vimeo', 'dailymotion', 'bilibili',
+        
+        # ==================== AUDIO & MUSIC ====================
+        # DAWs
+        'logic', 'logic pro', 'logic pro x', 'garageband',
+        'ableton', 'ableton live', 'fl studio', 'fruity loops',
+        'pro tools', 'avid pro tools', 'cubase', 'nuendo',
+        'studio one', 'presonus studio one', 'reaper', 'reason',
+        'bitwig', 'bitwig studio', 'audacity', 'ardour',
+        'lmms', 'mixcraft', 'bandlab', 'soundtrap',
+        # Audio Editing
+        'adobe audition', 'audition', 'izotope rx', 'rx',
+        'sound forge', 'wavelab', 'ocenaudio', 'fission',
+        'twisted wave', 'amadeus pro', 'acoustica',
+        # Music Players
+        'spotify', 'apple music', 'itunes', 'music',
+        'tidal', 'deezer', 'amazon music', 'youtube music',
+        'pandora', 'soundcloud', 'audiomack', 'bandcamp',
+        'qobuz', 'foobar2000', 'musicbee', 'winamp',
+        'clementine', 'strawberry', 'rhythmbox', 'amarok',
+        'vox', 'swinsian', 'doppler', 'plexamp',
+        # Podcasts
+        'pocket casts', 'overcast', 'castro', 'apple podcasts',
+        'spotify podcasts', 'google podcasts', 'stitcher',
+        'anchor', 'riverside.fm', 'zencastr', 'squadcast',
+        
+        # ==================== UTILITIES & SYSTEM ====================
+        # File Management
+        'finder', 'file explorer', 'explorer', 'path finder', 'forklift',
+        'transmit', 'cyberduck', 'filezilla', 'commander one',
+        'total commander', 'double commander', 'directory opus',
+        'the unarchiver', 'winrar', 'winzip', '7-zip', '7zip',
+        'peazip', 'bandizip', 'keka', 'archiver', 'betterzip',
+        # Cloud Storage
+        'dropbox', 'google drive', 'icloud', 'icloud drive',
+        'onedrive', 'microsoft onedrive', 'box', 'box drive',
+        'mega', 'sync', 'pcloud', 'tresorit', 'spideroak',
+        'nextcloud', 'owncloud', 'seafile', 'syncthing',
+        # Password Managers
+        '1password', 'lastpass', 'bitwarden', 'dashlane',
+        'keepass', 'keepassxc', 'enpass', 'roboform',
+        'nordpass', 'keeper', 'zoho vault', 'myki',
+        # VPNs
+        'nordvpn', 'expressvpn', 'surfshark', 'protonvpn', 'proton vpn',
+        'cyberghost', 'private internet access', 'pia',
+        'mullvad', 'windscribe', 'tunnelbear', 'hotspot shield',
+        'ivpn', 'vyprvpn', 'strongvpn', 'ipvanish',
+        # System Utilities
+        'cleanmymac', 'cleanmymac x', 'ccleaner', 'bleachbit',
+        'malwarebytes', 'avast', 'avg', 'bitdefender', 'norton',
+        'kaspersky', 'eset', 'sophos', 'trend micro', 'mcafee',
+        'little snitch', 'lulu', 'radio silence', 'tripmode',
+        'bartender', 'vanilla', 'dozer', 'hidden bar',
+        'alfred', 'raycast', 'launchbar', 'quicksilver', 'spotlight',
+        'hazel', 'keyboard maestro', 'bettertouchtool', 'karabiner',
+        'rectangle', 'magnet', 'spectacle', 'moom', 'divvy',
+        'cheatsheet', 'one switch', 'contexts', 'witch',
+        'istat menus', 'stats', 'menumeters', 'monitorcontrol',
+        'amphetamine', 'caffeine', 'lungo', 'theine',
+        'time machine', 'carbon copy cloner', 'superduper', 'chronosync',
+        'disk utility', 'disk drill', 'data rescue', 'recuva',
+        'activity monitor', 'task manager', 'process monitor', 'htop',
+        'app cleaner', 'appcleaner', 'app zapper', 'apptrap',
+        'pdf expert', 'preview', 'adobe reader', 'foxit reader',
+        'skim', 'pdf pen', 'pdf element', 'nitro pdf',
+        # Screenshot & Clipboard
+        'screenshot', 'snipping tool', 'greenshot', 'sharex',
+        'paste', 'clipboard manager', 'copy clip', 'maccy',
+        'flycut', 'copied', 'pastebot', 'ditto',
+        
+        # ==================== READING & REFERENCE ====================
+        'kindle', 'amazon kindle', 'apple books', 'books',
+        'calibre', 'kobo', 'nook', 'google play books',
+        'pocket', 'instapaper', 'readwise', 'matter',
+        'reeder', 'netnewswire', 'feedly', 'inoreader',
+        'flipboard', 'news', 'apple news', 'google news',
+        'wikipedia', 'stack overflow', 'medium', 'substack',
+        'dictionary', 'thesaurus', 'translate', 'google translate',
+        'deepl', 'linguee', 'reverso', 'wordreference',
+        
+        # ==================== FINANCE & BUSINESS ====================
+        'quickbooks', 'quicken', 'mint', 'ynab', 'personal capital',
+        'xero', 'freshbooks', 'wave', 'zoho books', 'sage',
+        'excel', 'google sheets', 'numbers', 'airtable',
+        'salesforce', 'hubspot', 'pipedrive', 'zoho crm',
+        'stripe', 'square', 'paypal', 'venmo', 'wise',
+        'coinbase', 'binance', 'kraken', 'robinhood', 'webull',
+        'trading view', 'tradingview', 'thinkorswim', 'metatrader',
+        'bloomberg', 'reuters', 'yahoo finance',
+        
+        # ==================== EDUCATION & LEARNING ====================
+        'duolingo', 'babbel', 'rosetta stone', 'busuu', 'memrise',
+        'anki', 'quizlet', 'flashcards', 'brainscape',
+        'khan academy', 'coursera', 'udemy', 'edx', 'skillshare',
+        'linkedin learning', 'pluralsight', 'codecademy', 'datacamp',
+        'brilliant', 'masterclass', 'domestika', 'ted',
+        'wolfram alpha', 'wolfram', 'mathematica', 'matlab',
+        'geogebra', 'desmos', 'symbolab', 'photomath',
+        'grammarly', 'hemingway', 'languagetool', 'prowritingaid',
+        'zotero', 'mendeley', 'endnote', 'paperpile', 'citavi',
+        
+        # ==================== HEALTH & WELLNESS ====================
+        'headspace', 'calm', 'insight timer', 'ten percent happier',
+        'waking up', 'balance', 'shine', 'aura',
+        'strava', 'nike run club', 'runkeeper', 'mapmyrun',
+        'myfitnesspal', 'lose it', 'noom', 'lifesum',
+        'fitbit', 'garmin connect', 'apple health', 'health',
+        'sleep cycle', 'pillow', 'autosleep', 'sleepwatch',
+        'zero', 'fastic', 'life fasting', 'window',
+        'streaks', 'habitica', 'habitify', 'habit tracker',
+        
+        # ==================== SOCIAL MEDIA ====================
+        'twitter', 'x', 'tweetdeck', 'tweetbot', 'twitterrific',
+        'facebook', 'instagram', 'threads', 'snapchat',
+        'tiktok', 'pinterest', 'tumblr', 'reddit',
+        'linkedin', 'clubhouse', 'mastodon', 'bluesky',
+        'buffer', 'hootsuite', 'later', 'sprout social',
+        
+        # ==================== PHOTOGRAPHY ====================
+        'lightroom', 'lightroom classic', 'capture one', 'luminar',
+        'darktable', 'rawtherapee', 'digikam', 'acdsee',
+        'photos', 'google photos', 'amazon photos', 'flickr',
+        'snapseed', 'vsco', 'polarr', 'darkroom',
+        'photomechanic', 'photo mechanic', 'bridge', 'photo booth',
+        
+        # ==================== EMULATORS ====================
+        'retroarch', 'dolphin', 'cemu', 'yuzu', 'ryujinx',
+        'ppsspp', 'desmume', 'melonds', 'citra', 'pcsx2',
+        'rpcs3', 'xenia', 'mame', 'epsxe', 'snes9x',
+        'zsnes', 'mgba', 'visualboy advance', 'vba',
+        'dosbox', 'wine', 'crossover', 'parallels', 'bootcamp',
+        'bluestacks', 'noxplayer', 'ldplayer', 'memu',
+        
+        # ==================== MISC APPS ====================
+        'home', 'homekit', 'apple home', 'google home', 'alexa',
+        'philips hue', 'nanoleaf', 'ring', 'nest',
+        'maps', 'apple maps', 'google maps', 'waze',
+        'uber', 'lyft', 'doordash', 'ubereats', 'grubhub',
+        'airbnb', 'booking', 'expedia', 'tripadvisor',
+        'weather', 'carrot weather', 'dark sky', 'weatherbug',
+        'clock', 'timer', 'stopwatch', 'world clock',
+        'calculator', 'pcalc', 'soulver', 'numi', 'calca',
+        'compass', 'measure', 'magnifier', 'level',
+        'voice memos', 'just press record', 'ferrite', 'recorder',
+        'contacts', 'cardhop', 'address book',
+        'system preferences', 'settings', 'control panel',
+        'app store', 'mac app store', 'microsoft store', 'play store',
+        'safari technology preview', 'xcode', 'testflight',
+        'simulator', 'ios simulator', 'android emulator',
+    }
+    
+    def _validate_url_pattern(self, url: str) -> tuple:
+        """
+        Validate a custom URL/domain pattern with layered checks.
+        
+        Uses format validation, TLD checking, and optional DNS lookup.
+        Never crashes - returns safe defaults on any error.
+        
+        Args:
+            url: The URL/domain to validate
+            
+        Returns:
+            Tuple of (is_valid, error_or_warning_message, is_warning)
+            - is_valid: True if pattern should be accepted
+            - error_or_warning_message: Error message or warning text
+            - is_warning: True if it's a warning (still valid), False if error
+        """
+        import re
+        import socket
+        
+        try:
+            url = url.strip().lower()
+            
+            # Must be at least 3 characters
+            if len(url) < 3:
+                return False, f"'{url}' is too short (min 3 characters)", False
+            
+            # Must not be too long
+            if len(url) > 253:
+                return False, f"'{url}' is too long (max 253 characters)", False
+            
+            # Basic format check - must look like a domain
+            # Valid: letters, numbers, dots, hyphens, colons (for ://x.com style)
+            if not re.match(r'^[a-z0-9:][a-z0-9._\-:/]*[a-z0-9]$', url):
+                return False, f"'{url}' contains invalid characters for a URL", False
+            
+            # Must contain a dot (required for domain)
+            if '.' not in url:
+                return False, f"'{url}' doesn't look like a URL - needs a domain extension (e.g., .com)", False
+            
+            # Extract domain for TLD checking
+            # Handle cases like "://x.com" or "subdomain.example.com"
+            domain = url
+            if '://' in domain:
+                domain = domain.split('://')[-1]
+            if '/' in domain:
+                domain = domain.split('/')[0]
+            
+            # Check TLD (last part after dot)
+            parts = domain.split('.')
+            if len(parts) >= 2:
+                # Check for compound TLDs first (e.g., co.uk)
+                potential_compound = '.'.join(parts[-2:])
+                tld = parts[-1]
+                
+                if potential_compound not in self.VALID_TLDS and tld not in self.VALID_TLDS:
+                    return False, f"'{url}' has invalid domain extension '.{tld}'", False
+            
+            # Warn about overly generic patterns
+            generic_terms = {'app', 'web', 'the', 'new', 'my', 'get', 'go'}
+            domain_name = parts[0] if parts else ''
+            if domain_name in generic_terms:
+                return True, f"'{url}' is generic and may cause false positives", True
+            
+            # DNS lookup (optional, with timeout and graceful fallback)
+            dns_result = self._dns_lookup_with_fallback(domain)
+            if not dns_result[0]:
+                # DNS failed - return as warning, still allow
+                return True, dns_result[1], True
+            
+            return True, "", False
+            
+        except Exception as e:
+            logger.error(f"URL validation error for '{url}': {e}")
+            return False, f"Validation error: {e}", False
+    
+    def _dns_lookup_with_fallback(self, domain: str) -> tuple:
+        """
+        Attempt DNS lookup with graceful fallback on network issues.
+        
+        Args:
+            domain: The domain to look up
+            
+        Returns:
+            Tuple of (success, message)
+            - success: True if domain is plausible (verified or network unavailable)
+            - message: Status message
+        """
+        import socket
+        
+        try:
+            # Set a short timeout to avoid blocking UI
+            original_timeout = socket.getdefaulttimeout()
+            socket.setdefaulttimeout(2.0)
+            
+            try:
+                socket.getaddrinfo(domain, 80)
+                return True, "Domain verified"
+            finally:
+                socket.setdefaulttimeout(original_timeout)
+                
+        except socket.gaierror:
+            # DNS lookup failed - domain likely doesn't exist
+            return False, f"Domain '{domain}' may not exist (DNS lookup failed)"
+        except socket.timeout:
+            # Network timeout - fall back gracefully
+            logger.warning(f"DNS lookup timeout for {domain} - accepting based on format")
+            return True, "Could not verify (network timeout) - accepted based on format"
+        except OSError as e:
+            # Network unavailable (e.g., no Wi-Fi)
+            logger.warning(f"Network error during DNS lookup for {domain}: {e}")
+            return True, "Could not verify (network unavailable) - accepted based on format"
+        except Exception as e:
+            # Any other error - don't crash, accept with warning
+            logger.warning(f"DNS lookup error for {domain}: {e}")
+            return True, "Could not verify (error) - accepted based on format"
+    
+    def _validate_app_pattern(self, app_name: str) -> tuple:
+        """
+        Validate a custom app name pattern.
+        
+        Requires EXACT match (case-insensitive) against KNOWN_APPS list.
+        Unknown apps trigger a warning, under 3 chars is invalid.
+        Never crashes - returns safe defaults on any error.
+        
+        Args:
+            app_name: The app name to validate
+            
+        Returns:
+            Tuple of (is_valid, error_or_warning_message, is_warning)
+            - is_valid: True if pattern should be accepted
+            - error_or_warning_message: Error message or warning text
+            - is_warning: True if it's a warning (still valid), False if error
+        """
+        import re
+        
+        try:
+            app_name = app_name.strip()
+            
+            # Must be at least 3 characters (reject very short inputs)
+            if len(app_name) < 3:
+                return False, f"'{app_name}' is too short (min 3 characters)", False
+            
+            # Must not be too long
+            if len(app_name) > 50:
+                return False, f"'{app_name}' is too long (max 50 characters)", False
+            
+            # Check if it looks like a URL (redirect to URL field)
+            if '.' in app_name and app_name.count('.') <= 3:
+                # Could be a domain - check if it ends with a TLD
+                parts = app_name.lower().split('.')
+                if len(parts) >= 2 and parts[-1] in self.VALID_TLDS:
+                    return False, f"'{app_name}' looks like a URL - add it to the URLs field instead", False
+            
+            # Only allow characters actually used in real app names:
+            # - Letters, numbers, spaces (basic)
+            # - Hyphen: "Half-Life", "Counter-Strike"
+            # - Plus: "Disney+", "Apple TV+"
+            # - Apostrophe: "Baldur's Gate", "Assassin's Creed"
+            # - Colon: "Call of Duty: Warzone"
+            # - Ampersand: "AT&T", "Barnes & Noble"
+            # - Parentheses: "VLC (64-bit)"
+            # NOT allowed: dots, underscores, @, #, $, %, *, !, etc.
+            if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9\s\-\+\'\:\&\(\)]*[a-zA-Z0-9\+\'\)]?$', app_name):
+                return False, f"'{app_name}' contains invalid characters - only letters, numbers, spaces, and common symbols (- + ' : & ( )) allowed", False
+            
+            # Warn about patterns that look like mistyped URLs
+            if app_name.lower().endswith(('.com', '.org', '.net', '.io')):
+                return True, f"'{app_name}' looks like it might be a URL", True
+            
+            # Check if this is a known app - EXACT MATCH ONLY (case-insensitive)
+            app_lower = app_name.lower()
+            if app_lower in self.KNOWN_APPS:
+                # Exact match with known app - accept without warning
+                return True, "", False
+            
+            # Unknown app - warn but allow
+            # No partial matching - must be exact match to be recognized
+            return True, f"'{app_name}' is not a recognized app - please verify the name", True
+            
+        except Exception as e:
+            logger.error(f"App validation error for '{app_name}': {e}")
+            return False, f"Validation error: {e}", False
+    
     def _validate_pattern(self, pattern: str) -> tuple:
         """
-        Validate a custom blocklist pattern.
+        Legacy validation method - routes to appropriate validator.
+        
+        Kept for backward compatibility.
         
         Args:
             pattern: The pattern to validate
@@ -1389,72 +2367,192 @@ class GavinGUI:
         Returns:
             Tuple of (is_valid, error_message)
         """
-        import re
-        pattern = pattern.strip().lower()
+        # Determine if it's a URL or app name based on content
+        if '.' in pattern:
+            is_valid, msg, _ = self._validate_url_pattern(pattern)
+        else:
+            is_valid, msg, _ = self._validate_app_pattern(pattern)
         
-        # Must be at least 3 characters
-        if len(pattern) < 3:
-            return False, f"'{pattern}' is too short (min 3 characters)"
-        
-        # Should look like a domain or app name
-        # Valid: letters, numbers, dots, hyphens, underscores, colons (for ://x.com style)
-        if not re.match(r'^[:a-z0-9][a-z0-9._\-:/]*[a-z0-9]$', pattern):
-            return False, f"'{pattern}' contains invalid characters"
-        
-        # Warn about overly generic single words that could cause false positives
-        generic_terms = {'app', 'web', 'com', 'net', 'org', 'the', 'new', 'pro'}
-        if pattern in generic_terms:
-            return False, f"'{pattern}' is too generic and may cause false positives"
-        
-        # Check for patterns that are too short without a dot (likely incomplete)
-        if len(pattern) <= 4 and '.' not in pattern:
-            return False, f"'{pattern}' is too short - use full domain (e.g., {pattern}.com)"
-        
-        return True, ""
+        return is_valid, msg
+    
+    def _validate_urls_realtime(self):
+        """
+        Validate URLs in real-time as user types.
+        Updates the validation label with status/warnings.
+        """
+        try:
+            urls_text = self.custom_urls_text.get("1.0", tk.END).strip()
+            if not urls_text:
+                self.url_validation_label.config(text="", fg=COLORS["text_secondary"])
+                return
+            
+            urls = [u.strip() for u in urls_text.split("\n") if u.strip()]
+            errors = []
+            warnings = []
+            valid_count = 0
+            
+            for url in urls:
+                is_valid, msg, is_warning = self._validate_url_pattern(url)
+                if not is_valid:
+                    errors.append(msg)
+                elif is_warning and msg:
+                    warnings.append(msg)
+                else:
+                    valid_count += 1
+            
+            # Update label with status and tooltip with full message
+            if errors:
+                short_text = f"❌ {len(errors)} invalid: {errors[0][:40]}..."
+                full_text = "Invalid URLs:\n• " + "\n• ".join(errors)
+                self.url_validation_label.config(text=short_text, fg=COLORS["status_gadget"])
+                self.url_validation_tooltip.update_text(full_text)
+            elif warnings:
+                short_text = f"⚠️ {len(warnings)} warning(s): {warnings[0][:35]}..."
+                full_text = "Warnings:\n• " + "\n• ".join(warnings)
+                self.url_validation_label.config(text=short_text, fg=COLORS["accent_warm"])
+                self.url_validation_tooltip.update_text(full_text)
+            elif valid_count > 0:
+                self.url_validation_label.config(
+                    text=f"✓ {valid_count} URL(s) valid",
+                    fg=COLORS["status_focused"]  # Green
+                )
+                self.url_validation_tooltip.update_text("")
+            else:
+                self.url_validation_label.config(text="", fg=COLORS["text_secondary"])
+                self.url_validation_tooltip.update_text("")
+                
+        except Exception as e:
+            logger.error(f"Error in real-time URL validation: {e}")
+            self.url_validation_label.config(text="", fg=COLORS["text_secondary"])
+            self.url_validation_tooltip.update_text("")
+    
+    def _validate_apps_realtime(self):
+        """
+        Validate app names in real-time as user types.
+        Updates the validation label with status/warnings.
+        """
+        try:
+            apps_text = self.custom_apps_text.get("1.0", tk.END).strip()
+            if not apps_text:
+                self.app_validation_label.config(text="", fg=COLORS["text_secondary"])
+                return
+            
+            apps = [a.strip() for a in apps_text.split("\n") if a.strip()]
+            errors = []
+            warnings = []
+            valid_count = 0
+            
+            for app in apps:
+                is_valid, msg, is_warning = self._validate_app_pattern(app)
+                if not is_valid:
+                    errors.append(msg)
+                elif is_warning and msg:
+                    warnings.append(msg)
+                else:
+                    valid_count += 1
+            
+            # Update label with status and tooltip with full message
+            if errors:
+                short_text = f"❌ {len(errors)} invalid: {errors[0][:40]}..."
+                full_text = "Invalid apps:\n• " + "\n• ".join(errors)
+                self.app_validation_label.config(text=short_text, fg=COLORS["status_gadget"])
+                self.app_validation_tooltip.update_text(full_text)
+            elif warnings:
+                short_text = f"⚠️ {len(warnings)} warning(s): {warnings[0][:35]}..."
+                full_text = "Warnings:\n• " + "\n• ".join(warnings)
+                self.app_validation_label.config(text=short_text, fg=COLORS["accent_warm"])
+                self.app_validation_tooltip.update_text(full_text)
+            elif valid_count > 0:
+                self.app_validation_label.config(
+                    text=f"✓ {valid_count} app(s) valid",
+                    fg=COLORS["status_focused"]  # Green
+                )
+                self.app_validation_tooltip.update_text("")
+            else:
+                self.app_validation_label.config(text="", fg=COLORS["text_secondary"])
+                self.app_validation_tooltip.update_text("")
+                
+        except Exception as e:
+            logger.error(f"Error in real-time app validation: {e}")
+            self.app_validation_label.config(text="", fg=COLORS["text_secondary"])
+            self.app_validation_tooltip.update_text("")
     
     def _save_blocklist_settings(self, settings_window: tk.Toplevel):
         """
         Save blocklist settings and close the dialog.
-        Validates patterns and handles duplicates gracefully.
+        Validates URLs and apps separately, handles duplicates gracefully.
         
         Args:
             settings_window: The settings window to close
         """
-        # Get custom patterns from text area
-        custom_text = self.custom_text.get("1.0", tk.END).strip()
-        raw_patterns = [p.strip().lower() for p in custom_text.split("\n") if p.strip()]
+        # --- Process URLs ---
+        urls_text = self.custom_urls_text.get("1.0", tk.END).strip()
+        raw_urls = [u.strip().lower() for u in urls_text.split("\n") if u.strip()]
         
-        # Validate each pattern
-        valid_patterns = []
-        invalid_patterns = []
+        valid_urls = []
+        invalid_urls = []
+        url_warnings = []
         
-        for pattern in raw_patterns:
-            is_valid, error = self._validate_pattern(pattern)
-            if is_valid:
-                valid_patterns.append(pattern)
+        for url in raw_urls:
+            is_valid, msg, is_warning = self._validate_url_pattern(url)
+            if not is_valid:
+                invalid_urls.append(msg)
             else:
-                invalid_patterns.append(error)
+                valid_urls.append(url)
+                if is_warning and msg:
+                    url_warnings.append(msg)
         
-        # If there are invalid patterns, show error and don't save
-        if invalid_patterns:
-            error_msg = "Some patterns are invalid:\n\n" + "\n".join(invalid_patterns[:5])
-            if len(invalid_patterns) > 5:
-                error_msg += f"\n... and {len(invalid_patterns) - 5} more"
+        # --- Process Apps ---
+        apps_text = self.custom_apps_text.get("1.0", tk.END).strip()
+        raw_apps = [a.strip() for a in apps_text.split("\n") if a.strip()]
+        
+        valid_apps = []
+        invalid_apps = []
+        app_warnings = []
+        
+        for app in raw_apps:
+            is_valid, msg, is_warning = self._validate_app_pattern(app)
+            if not is_valid:
+                invalid_apps.append(msg)
+            else:
+                valid_apps.append(app)
+                if is_warning and msg:
+                    app_warnings.append(msg)
+        
+        # If there are invalid entries, show error and don't save
+        all_invalid = invalid_urls + invalid_apps
+        if all_invalid:
+            error_msg = "Some entries are invalid:\n\n" + "\n".join(all_invalid[:5])
+            if len(all_invalid) > 5:
+                error_msg += f"\n... and {len(all_invalid) - 5} more"
             error_msg += "\n\nPlease fix these and try again."
-            messagebox.showerror("Invalid Patterns", error_msg)
+            messagebox.showerror("Invalid Entries", error_msg)
             return  # Don't close dialog, let user fix
         
-        # Remove duplicates within custom patterns (case-insensitive)
-        seen = set()
-        unique_patterns = []
-        duplicates_removed = []
+        # Remove duplicates within URLs (case-insensitive)
+        seen_urls = set()
+        unique_urls = []
+        url_duplicates = []
         
-        for pattern in valid_patterns:
-            if pattern not in seen:
-                seen.add(pattern)
-                unique_patterns.append(pattern)
+        for url in valid_urls:
+            if url not in seen_urls:
+                seen_urls.add(url)
+                unique_urls.append(url)
             else:
-                duplicates_removed.append(pattern)
+                url_duplicates.append(url)
+        
+        # Remove duplicates within Apps (case-sensitive for app names)
+        seen_apps = set()
+        unique_apps = []
+        app_duplicates = []
+        
+        for app in valid_apps:
+            app_lower = app.lower()
+            if app_lower not in seen_apps:
+                seen_apps.add(app_lower)
+                unique_apps.append(app)
+            else:
+                app_duplicates.append(app)
         
         # Check for overlaps with preset categories
         preset_patterns = set()
@@ -1463,17 +2561,27 @@ class GavinGUI:
                 for p in PRESET_CATEGORIES[cat_id]['patterns']:
                     preset_patterns.add(p.lower())
         
-        # Filter out patterns that already exist in enabled preset categories
-        preset_overlaps = []
-        final_patterns = []
-        for pattern in unique_patterns:
-            if pattern in preset_patterns:
-                preset_overlaps.append(pattern)
+        # Filter out URLs that already exist in enabled preset categories
+        url_overlaps = []
+        final_urls = []
+        for url in unique_urls:
+            if url in preset_patterns:
+                url_overlaps.append(url)
             else:
-                final_patterns.append(pattern)
+                final_urls.append(url)
         
-        # Update blocklist with validated, deduplicated patterns
-        self.blocklist.custom_patterns = final_patterns
+        # Filter out Apps that already exist in enabled preset categories
+        app_overlaps = []
+        final_apps = []
+        for app in unique_apps:
+            if app.lower() in preset_patterns:
+                app_overlaps.append(app)
+            else:
+                final_apps.append(app)
+        
+        # Update blocklist with validated, deduplicated entries
+        self.blocklist.custom_urls = final_urls
+        self.blocklist.custom_apps = final_apps
         
         # Update AI fallback setting
         self.use_ai_fallback = self.ai_fallback_var.get()
@@ -1481,12 +2589,18 @@ class GavinGUI:
         # Save to file
         self.blocklist_manager.save(self.blocklist)
         
-        # Show message if any duplicates were handled
+        # Prepare feedback messages
         messages = []
+        duplicates_removed = url_duplicates + app_duplicates
+        preset_overlaps = url_overlaps + app_overlaps
+        all_warnings = url_warnings + app_warnings
+        
         if duplicates_removed:
             messages.append(f"Removed {len(duplicates_removed)} duplicate(s)")
         if preset_overlaps:
-            messages.append(f"Removed {len(preset_overlaps)} pattern(s) already in preset categories")
+            messages.append(f"Removed {len(preset_overlaps)} entry(s) already in preset categories")
+        if all_warnings:
+            messages.append(f"Note: {len(all_warnings)} warning(s) - entries saved but may need review")
         
         if messages:
             messagebox.showinfo(
@@ -1497,7 +2611,8 @@ class GavinGUI:
         # Close dialog
         settings_window.destroy()
         
-        logger.info(f"Blocklist settings saved (AI fallback: {self.use_ai_fallback}, "
+        logger.info(f"Blocklist settings saved (URLs: {len(final_urls)}, Apps: {len(final_apps)}, "
+                   f"AI fallback: {self.use_ai_fallback}, "
                    f"duplicates removed: {len(duplicates_removed)}, "
                    f"preset overlaps: {len(preset_overlaps)})")
     
@@ -1634,7 +2749,7 @@ By clicking 'I Understand', you acknowledge this data processing."""
             badge_color = COLORS["time_badge"]
             time_text = f"{time_text} left"
         
-        self.time_badge.configure(text=time_text, bg=badge_color)
+        self.time_badge.configure_badge(text=time_text, bg_color=badge_color)
     
     def _show_usage_details(self, event=None):
         """Show a popup with detailed usage information."""
@@ -1721,8 +2836,13 @@ By clicking 'I Understand', you acknowledge this data processing."""
         self.is_locked = False
         self._update_time_badge()
         
-        # Re-enable start button
+        # Restore mode selector (hidden when session was running before time exhausted)
+        self.mode_frame.grid()
+        
+        # Re-enable start button and reset UI state
         self.start_stop_btn.configure_button(state=tk.NORMAL)
+        self._reset_button_state()
+        self._update_status("idle", "Ready to Start")
         
         logger.info("App unlocked - time extension granted")
     
@@ -2279,10 +3399,13 @@ By clicking 'I Understand', you acknowledge this data processing."""
                         if self.session and self.session_started:
                             self.session.log_event(config.EVENT_SCREEN_DISTRACTION)
                         
+                        # Determine if it's a website or app distraction
+                        # Website: contains a dot and looks like a domain
+                        distraction_label = self._get_distraction_label(distraction_source)
+                        
                         # Update UI (thread-safe)
-                        self.root.after(0, lambda s=distraction_source: self._update_status(
-                            "screen", 
-                            f"Screen: {s[:20]}..." if len(s) > 20 else f"Screen: {s}"
+                        self.root.after(0, lambda lbl=distraction_label: self._update_status(
+                            "screen", lbl
                         ))
                         
                         # Track for alerts (same as camera distraction)
@@ -2449,6 +3572,44 @@ By clicking 'I Understand', you acknowledge this data processing."""
         
         # Schedule UI update on main thread
         self.root.after(0, lambda: self._update_status(status, text))
+    
+    def _get_distraction_label(self, distraction_source: str) -> str:
+        """
+        Determine the appropriate label for a distraction source.
+        
+        Args:
+            distraction_source: The pattern that triggered the distraction
+            
+        Returns:
+            Formatted label like "Website: example.com" or "App: Steam"
+        """
+        # Common TLDs that indicate a website
+        website_indicators = (
+            '.com', '.org', '.net', '.edu', '.gov', '.io', '.co', '.tv',
+            '.gg', '.app', '.dev', '.me', '.info', '.biz', '.xyz',
+            '://'  # URL protocol indicator
+        )
+        
+        source = distraction_source or "Unknown"
+        source_lower = source.lower()
+        
+        # Check if it looks like a website/URL
+        is_website = any(indicator in source_lower for indicator in website_indicators)
+        
+        # Format the label
+        if is_website:
+            prefix = "Website"
+            display_source = source  # Keep websites as-is
+        else:
+            prefix = "App"
+            # Capitalize app names properly (first letter of each word)
+            display_source = source.title()
+        
+        # Truncate if too long
+        if len(display_source) > 18:
+            return f"{prefix}: {display_source[:18]}..."
+        else:
+            return f"{prefix}: {display_source}"
     
     def _update_status(self, status: str, text: str, emoji: str = None):
         """

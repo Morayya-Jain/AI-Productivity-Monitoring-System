@@ -84,12 +84,15 @@ python3 -m unittest tests.test_session tests.test_analytics
 
 1. Add to `config.py` → 2. Handle in `session.py` → 3. Stats in `analytics.py` → 4. PDF in `pdf_report.py` → 5. GUI status color in `app.py`
 
-## 🖥️ Screen Monitoring
+## 🖥️ Screen Monitoring & Blocklist
 
 - Blocklist categories: Social Media, Video Streaming, Gaming (toggle in settings)
-- Custom patterns: Add URLs/app names in Blocklist Settings
+- **Separate fields**: URLs (`custom_urls`) and Apps (`custom_apps`) in `screen/blocklist.py`
+- **URL validation**: TLD check + DNS lookup (with network fallback) in `gui/app.py`
+- **App validation**: `KNOWN_APPS` whitelist (1500+ apps) in `gui/app.py` - DO NOT read entire list into context
+  - Known apps → accepted silently | Unknown apps → warning "not recognized"
+- **Self-cleaning**: Invalid patterns auto-removed at runtime in `check_distraction()`
 - Chrome URL detection: macOS (AppleScript), Windows (pywin32)
-- AI fallback: Optional, only when local detection inconclusive
 
 ## 📝 Code Standards
 

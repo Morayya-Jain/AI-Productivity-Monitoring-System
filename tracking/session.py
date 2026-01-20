@@ -107,7 +107,7 @@ class Session:
             elif event_type == config.EVENT_GADGET_SUSPECTED:
                 print(f"📱 On another gadget ({timestamp.strftime('%I:%M %p')})")
             elif event_type == config.EVENT_SCREEN_DISTRACTION:
-                print(f"🖥 Screen distraction detected ({timestamp.strftime('%I:%M %p')})")
+                print(f"🌐 Screen distraction detected ({timestamp.strftime('%I:%M %p')})")
             elif event_type == config.EVENT_PAUSED:
                 # Pause message is handled by GUI, but log for consistency
                 pass  # GUI prints "⏸ Session paused"

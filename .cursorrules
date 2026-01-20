@@ -126,6 +126,9 @@ REPORTS_DIR = BASE_DIR / "reports"
 - Uses thread-safe UI updates via root.after()
 - Modern dark theme with teal/coral accents
 - Privacy notice popup on first launch
+- **Blocklist validation**: `KNOWN_APPS` (1500+ apps), `VALID_TLDS` - DO NOT load full lists into context
+  - URL validation: TLD + DNS lookup with graceful network fallback
+  - App validation: Whitelist check, warns about unknown apps
 
 ### camera/vision_detector.py
 - Primary detection system
