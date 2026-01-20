@@ -26,6 +26,7 @@ def compute_statistics(events: List[Dict[str, Any]], total_duration: float) -> D
     present_seconds = 0.0
     away_seconds = 0.0
     gadget_seconds = 0.0
+    screen_distraction_seconds = 0.0
     paused_seconds = 0.0
     
     # Sum up durations by event type
@@ -42,12 +43,15 @@ def compute_statistics(events: List[Dict[str, Any]], total_duration: float) -> D
             away_seconds += duration
         elif event_type == config.EVENT_GADGET_SUSPECTED:
             gadget_seconds += duration
+        elif event_type == config.EVENT_SCREEN_DISTRACTION:
+            screen_distraction_seconds += duration
         elif event_type == config.EVENT_PAUSED:
             paused_seconds += duration
     
     # Calculate derived values
-    active_seconds = present_seconds + away_seconds + gadget_seconds
-    distracted_seconds = away_seconds + gadget_seconds
+    # Screen distraction counts as active time (user is at desk, just distracted)
+    active_seconds = present_seconds + away_seconds + gadget_seconds + screen_distraction_seconds
+    distracted_seconds = away_seconds + gadget_seconds + screen_distraction_seconds
     total_seconds = active_seconds + paused_seconds
     
     # Consolidate events for timeline (keeps float precision)
@@ -59,6 +63,7 @@ def compute_statistics(events: List[Dict[str, Any]], total_duration: float) -> D
         "present_seconds": present_seconds,
         "away_seconds": away_seconds,
         "gadget_seconds": gadget_seconds,
+        "screen_distraction_seconds": screen_distraction_seconds,
         "paused_seconds": paused_seconds,
         "active_seconds": active_seconds,
         "distracted_seconds": distracted_seconds,
@@ -67,6 +72,7 @@ def compute_statistics(events: List[Dict[str, Any]], total_duration: float) -> D
         "focused_minutes": present_seconds / 60.0,
         "away_minutes": away_seconds / 60.0,
         "gadget_minutes": gadget_seconds / 60.0,
+        "screen_distraction_minutes": screen_distraction_seconds / 60.0,
         "paused_minutes": paused_seconds / 60.0,
         "present_minutes": present_seconds / 60.0,
         "events": consolidated
@@ -149,6 +155,7 @@ def _format_event(event: Dict[str, Any]) -> Dict[str, Any]:
         config.EVENT_PRESENT: "Focused",
         config.EVENT_AWAY: "Away",
         config.EVENT_GADGET_SUSPECTED: "Gadget Usage",
+        config.EVENT_SCREEN_DISTRACTION: "Screen Distraction",
         config.EVENT_PAUSED: "Paused"
     }
     
@@ -166,7 +173,7 @@ def get_focus_percentage(stats: Dict[str, Any]) -> float:
     """
     Calculate focus percentage from statistics.
     
-    Focus rate = present / active_time, where active_time = present + away + gadget.
+    Focus rate = present / active_time, where active_time = present + away + gadget + screen_distraction.
     Paused time is completely excluded from both numerator and denominator.
     This ensures the focus rate is always between 0% and 100%.
     
@@ -181,10 +188,12 @@ def get_focus_percentage(stats: Dict[str, Any]) -> float:
         active_time = float(stats["active_seconds"])
         present_time = float(stats["present_seconds"])
     else:
-        # Legacy fallback
+        # Legacy fallback (includes screen_distraction if present)
+        screen_distraction = stats.get("screen_distraction_minutes", 0)
         active_time = (stats.get("present_minutes", 0) + 
                        stats.get("away_minutes", 0) + 
-                       stats.get("gadget_minutes", 0)) * 60.0
+                       stats.get("gadget_minutes", 0) +
+                       screen_distraction) * 60.0
         present_time = stats.get("present_minutes", 0) * 60.0
     
     if active_time <= 0:
@@ -216,13 +225,15 @@ def generate_summary_text(stats: Dict[str, Any]) -> str:
         present_secs = stats["present_seconds"]
         away_secs = stats["away_seconds"]
         gadget_secs = stats["gadget_seconds"]
+        screen_distraction_secs = stats.get("screen_distraction_seconds", 0)
         paused_secs = stats["paused_seconds"]
     else:
         present_secs = stats.get("present_minutes", 0) * 60
         away_secs = stats.get("away_minutes", 0) * 60
         gadget_secs = stats.get("gadget_minutes", 0) * 60
+        screen_distraction_secs = stats.get("screen_distraction_minutes", 0) * 60
         paused_secs = stats.get("paused_minutes", 0) * 60
-        active_secs = present_secs + away_secs + gadget_secs
+        active_secs = present_secs + away_secs + gadget_secs + screen_distraction_secs
     
     focus_pct = get_focus_percentage(stats)
     
@@ -246,6 +257,10 @@ Focused Time: {fmt_mins(present_secs)} minutes ({focus_pct:.1f}%)
 Away Time: {fmt_mins(away_secs)} minutes
 Gadget Usage: {fmt_mins(gadget_secs)} minutes
 """
+    
+    # Only show screen distraction time if > 0
+    if screen_distraction_secs > 0:
+        summary += f"Screen Distraction: {fmt_mins(screen_distraction_secs)} minutes\n"
     
     # Only show paused time if > 0
     if paused_secs > 0:

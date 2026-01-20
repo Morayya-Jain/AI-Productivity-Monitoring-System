@@ -931,18 +931,20 @@ def generate_report(
         present_secs = stats['present_seconds']
         away_secs = stats['away_seconds']
         gadget_secs = stats['gadget_seconds']
+        screen_distraction_secs = stats.get('screen_distraction_seconds', 0)
         paused_secs = stats['paused_seconds']
-        active_secs = stats['active_seconds']  # = present + away + gadget
+        active_secs = stats['active_seconds']  # = present + away + gadget + screen_distraction
     else:
         # Legacy fallback
         present_secs = stats.get('present_minutes', 0) * 60.0
         away_secs = stats.get('away_minutes', 0) * 60.0
         gadget_secs = stats.get('gadget_minutes', 0) * 60.0
+        screen_distraction_secs = stats.get('screen_distraction_minutes', 0) * 60.0
         paused_secs = stats.get('paused_minutes', 0) * 60.0
-        active_secs = present_secs + away_secs + gadget_secs
+        active_secs = present_secs + away_secs + gadget_secs + screen_distraction_secs
     
     # Calculate focus percentage: present / active_time
-    # This is guaranteed to be 0-100% since active_time = present + away + gadget
+    # This is guaranteed to be 0-100% since active_time = present + away + gadget + screen_distraction
     if active_secs > 0:
         focus_pct = (present_secs / active_secs) * 100.0
     else:
@@ -977,6 +979,10 @@ def generate_report(
     if gadget_secs > 0:
         stats_data.append(['Gadget Usage', _format_time_seconds(gadget_secs)])
         row_types.append('gadget')
+    
+    if screen_distraction_secs > 0:
+        stats_data.append(['Screen Distraction', _format_time_seconds(screen_distraction_secs)])
+        row_types.append('screen')
     
     # Add paused time row only if > 0 (will be styled in italic grey)
     if paused_secs > 0:
@@ -1019,6 +1025,9 @@ def generate_report(
             table_style.append(('TEXTCOLOR', (0, i), (0, i), colors.HexColor('#1B7A3D')))
         elif row_type in ['away', 'gadget']:
             table_style.append(('TEXTCOLOR', (0, i), (0, i), colors.HexColor('#C62828')))
+        elif row_type == 'screen':
+            # Screen distraction in purple
+            table_style.append(('TEXTCOLOR', (0, i), (0, i), colors.HexColor('#7C3AED')))
         elif row_type == 'paused':
             # Paused row: grey text (normal font, not italic)
             table_style.append(('TEXTCOLOR', (0, i), (1, i), colors.HexColor('#7F8C8D')))
@@ -1107,6 +1116,9 @@ def generate_report(
                     logs_table_style.append(('TEXTCOLOR', (1, i), (1, i), colors.HexColor('#1B7A3D')))
                 elif event_type in ['away', 'gadget_suspected']:
                     logs_table_style.append(('TEXTCOLOR', (1, i), (1, i), colors.HexColor('#C62828')))
+                elif event_type == 'screen_distraction':
+                    # Screen distraction row: purple text for activity column
+                    logs_table_style.append(('TEXTCOLOR', (1, i), (1, i), colors.HexColor('#7C3AED')))
                 elif event_type == 'paused':
                     # Paused row: italic grey text for entire row
                     logs_table_style.append(('FONTNAME', (0, i), (-1, i), 'Times-Italic'))

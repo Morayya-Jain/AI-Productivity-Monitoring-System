@@ -9,8 +9,8 @@ class Session:
     """
     Manages a single focus session with event logging.
     
-    Tracks session lifecycle, logs events (present, away, gadget_suspected),
-    and provides JSON serialization for persistence.
+    Tracks session lifecycle, logs events (present, away, gadget_suspected,
+    screen_distraction), and provides JSON serialization for persistence.
     """
     
     def __init__(self, session_id: Optional[str] = None):
@@ -76,7 +76,8 @@ class Session:
         2. Starts tracking the new state
         
         Args:
-            event_type: Type of event (present, away, gadget_suspected, paused)
+            event_type: Type of event (present, away, gadget_suspected, 
+                        screen_distraction, paused)
             timestamp: Optional timestamp. If None, uses current time.
         """
         if timestamp is None:
@@ -105,6 +106,8 @@ class Session:
                     print(f"✓ Back at desk ({timestamp.strftime('%I:%M %p')})")
             elif event_type == config.EVENT_GADGET_SUSPECTED:
                 print(f"📱 On another gadget ({timestamp.strftime('%I:%M %p')})")
+            elif event_type == config.EVENT_SCREEN_DISTRACTION:
+                print(f"🖥 Screen distraction detected ({timestamp.strftime('%I:%M %p')})")
             elif event_type == config.EVENT_PAUSED:
                 # Pause message is handled by GUI, but log for consistency
                 pass  # GUI prints "⏸ Session paused"

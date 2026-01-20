@@ -29,6 +29,8 @@ from tracking.analytics import compute_statistics
 from tracking.usage_limiter import get_usage_limiter, UsageLimiter
 from reporting.pdf_report import generate_report
 from instance_lock import check_single_instance, get_existing_pid
+from screen.window_detector import WindowDetector, get_screen_state, get_screen_state_with_ai_fallback
+from screen.blocklist import Blocklist, BlocklistManager, PRESET_CATEGORIES
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +48,7 @@ COLORS = {
     "status_focused": "#4ADE80",    # Green for focused
     "status_away": "#FBBF24",       # Amber for away
     "status_gadget": "#F87171",     # Red for gadget distraction
+    "status_screen": "#A78BFA",     # Purple for screen distraction
     "status_idle": "#64748B",       # Gray for idle
     "status_paused": "#94A3B8",     # Muted gray for paused
     "button_start": "#22C55E",      # Green start button
@@ -56,9 +59,13 @@ COLORS = {
     "button_pause_hover": "#475569", # Darker grey on hover
     "button_resume": "#38BDF8",     # Sky blue resume button (same as unlock)
     "button_resume_hover": "#0EA5E9", # Darker sky blue on hover
+    "button_settings": "#6366F1",   # Indigo for settings button
+    "button_settings_hover": "#4F46E5", # Darker indigo on hover
     "time_badge": "#8B5CF6",        # Purple for time remaining badge
     "time_badge_low": "#F97316",    # Orange when time is low
     "time_badge_expired": "#EF4444", # Red when time expired
+    "toggle_on": "#6366F1",         # Indigo for enabled toggles (different from green Start button)
+    "toggle_off": "#475569",        # Gray for disabled toggles
 }
 
 # Privacy settings file
@@ -661,9 +668,16 @@ class GavinGUI:
         self.is_running = False
         self.should_stop = threading.Event()
         self.detection_thread: Optional[threading.Thread] = None
-        self.current_status = "idle"  # idle, focused, away, gadget, paused
+        self.screen_detection_thread: Optional[threading.Thread] = None
+        self.current_status = "idle"  # idle, focused, away, gadget, screen, paused
         self.session_start_time: Optional[datetime] = None
         self.session_started = False  # Track if first detection has occurred
+        
+        # Monitoring mode (defaults to camera-only for backward compatibility)
+        self.monitoring_mode = config.MODE_CAMERA_ONLY
+        self.blocklist_manager = BlocklistManager(config.SCREEN_SETTINGS_FILE)
+        self.blocklist = self.blocklist_manager.load()
+        self.use_ai_fallback = config.SCREEN_AI_FALLBACK_ENABLED
         
         # Pause state tracking
         self.is_paused = False  # Whether session is currently paused
@@ -792,6 +806,7 @@ class GavinGUI:
             "focused": COLORS["status_focused"],
             "away": COLORS["status_away"],
             "gadget": COLORS["status_gadget"],
+            "screen": COLORS["status_screen"],
             "paused": COLORS["status_paused"],
         }
         return color_map.get(self.current_status, COLORS["status_idle"])
@@ -817,6 +832,7 @@ class GavinGUI:
         self.main_frame.grid_rowconfigure(0, weight=1)   # Top spacer
         self.main_frame.grid_rowconfigure(1, weight=0)   # Title
         self.main_frame.grid_rowconfigure(2, weight=1)   # Spacer
+        self.main_frame.grid_rowconfigure(8, weight=0)   # Mode selector (added)
         self.main_frame.grid_rowconfigure(3, weight=0)   # Status
         self.main_frame.grid_rowconfigure(4, weight=2)   # Spacer (more weight)
         self.main_frame.grid_rowconfigure(5, weight=0)   # Timer
@@ -858,7 +874,6 @@ class GavinGUI:
             bg=COLORS["time_badge"],
             padx=12,
             pady=4,
-            cursor="hand2"
         )
         self.time_badge.pack()
         self.time_badge.bind("<Button-1>", self._show_usage_details)
@@ -958,6 +973,533 @@ class GavinGUI:
         )
         self.start_stop_btn.pack()
         
+        # --- Mode Selector Section (below buttons) ---
+        self._create_mode_selector()
+    
+    def _create_mode_selector(self):
+        """
+        Create the monitoring mode selector UI.
+        
+        Allows users to choose between Camera Only, Screen Only, or Both modes.
+        Also provides access to blocklist settings.
+        """
+        # Mode selector container
+        self.mode_frame = tk.Frame(self.main_frame, bg=COLORS["bg_dark"])
+        self.mode_frame.grid(row=8, column=0, sticky="ew", pady=(15, 0))
+        
+        # Mode label
+        mode_label = tk.Label(
+            self.mode_frame,
+            text="Monitoring Mode",
+            font=self.font_small,
+            fg=COLORS["text_secondary"],
+            bg=COLORS["bg_dark"]
+        )
+        mode_label.pack()
+        
+        # Mode buttons container
+        mode_buttons_frame = tk.Frame(self.mode_frame, bg=COLORS["bg_dark"])
+        mode_buttons_frame.pack(pady=(5, 0))
+        
+        # Create mode toggle buttons
+        self.mode_var = tk.StringVar(value=config.MODE_CAMERA_ONLY)
+        
+        modes = [
+            (config.MODE_CAMERA_ONLY, "📷 Camera"),
+            (config.MODE_SCREEN_ONLY, "🖥 Screen"),
+            (config.MODE_BOTH, "📷+🖥 Both"),
+        ]
+        
+        self.mode_buttons = {}
+        for mode_id, mode_text in modes:
+            btn = tk.Label(
+                mode_buttons_frame,
+                text=mode_text,
+                font=self.font_small,
+                fg=COLORS["text_white"] if mode_id == self.monitoring_mode else COLORS["text_secondary"],
+                bg=COLORS["toggle_on"] if mode_id == self.monitoring_mode else COLORS["toggle_off"],
+                padx=12,
+                pady=6,
+            )
+            btn.pack(side=tk.LEFT, padx=2)
+            btn.bind("<Button-1>", lambda e, m=mode_id: self._set_monitoring_mode(m))
+            self.mode_buttons[mode_id] = btn
+        
+        # Settings button (for blocklist management)
+        settings_frame = tk.Frame(self.mode_frame, bg=COLORS["bg_dark"])
+        settings_frame.pack(pady=(8, 0))
+        
+        self.settings_btn = tk.Label(
+            settings_frame,
+            text="⚙️ Blocklist Settings",
+            font=self.font_small,
+            fg=COLORS["accent_primary"],
+            bg=COLORS["bg_dark"]
+        )
+        self.settings_btn.pack()
+        self.settings_btn.bind("<Button-1>", lambda e: self._show_blocklist_settings())
+        self.settings_btn.bind("<Enter>", lambda e: self.settings_btn.configure(fg=COLORS["accent_warm"]))
+        self.settings_btn.bind("<Leave>", lambda e: self.settings_btn.configure(fg=COLORS["accent_primary"]))
+    
+    def _set_monitoring_mode(self, mode: str):
+        """
+        Set the monitoring mode.
+        
+        Args:
+            mode: One of MODE_CAMERA_ONLY, MODE_SCREEN_ONLY, or MODE_BOTH
+        """
+        # Don't change mode while session is running
+        if self.is_running:
+            messagebox.showwarning(
+                "Session Active",
+                "Cannot change monitoring mode while a session is running.\n"
+                "Please stop the current session first."
+            )
+            return
+        
+        self.monitoring_mode = mode
+        self.mode_var.set(mode)
+        
+        # Update button visuals
+        for mode_id, btn in self.mode_buttons.items():
+            if mode_id == mode:
+                btn.configure(
+                    fg=COLORS["text_white"],
+                    bg=COLORS["toggle_on"]
+                )
+            else:
+                btn.configure(
+                    fg=COLORS["text_secondary"],
+                    bg=COLORS["toggle_off"]
+                )
+        
+        logger.info(f"Monitoring mode set to: {mode}")
+    
+    def _show_blocklist_settings(self):
+        """
+        Show the blocklist settings dialog.
+        
+        Allows users to enable/disable preset categories and add custom patterns.
+        """
+        # Create settings window
+        settings_window = tk.Toplevel(self.root)
+        settings_window.title("Blocklist Settings")
+        settings_window.configure(bg=COLORS["bg_dark"])
+        settings_window.geometry("400x580")
+        settings_window.resizable(False, False)
+        
+        # Center on parent window
+        settings_window.transient(self.root)
+        settings_window.grab_set()
+        
+        x = self.root.winfo_x() + (self.root.winfo_width() - 400) // 2
+        y = self.root.winfo_y() + (self.root.winfo_height() - 580) // 2
+        settings_window.geometry(f"+{x}+{y}")
+        
+        # Main container with padding
+        main_container = tk.Frame(settings_window, bg=COLORS["bg_dark"])
+        main_container.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        
+        # Title
+        title = tk.Label(
+            main_container,
+            text="Blocklist Settings",
+            font=self.font_title,
+            fg=COLORS["accent_primary"],
+            bg=COLORS["bg_dark"]
+        )
+        title.pack()
+        
+        subtitle = tk.Label(
+            main_container,
+            text="Configure which sites/apps to block",
+            font=self.font_small,
+            fg=COLORS["text_secondary"],
+            bg=COLORS["bg_dark"]
+        )
+        subtitle.pack(pady=(5, 15))
+        
+        # Categories section
+        categories_label = tk.Label(
+            main_container,
+            text="Preset Categories",
+            font=self.font_status,
+            fg=COLORS["text_primary"],
+            bg=COLORS["bg_dark"]
+        )
+        categories_label.pack(anchor="w")
+        
+        # Category toggles
+        self.category_vars = {}
+        categories_frame = tk.Frame(main_container, bg=COLORS["bg_dark"])
+        categories_frame.pack(fill=tk.X, pady=(5, 15))
+        
+        for cat_id, cat_data in PRESET_CATEGORIES.items():
+            var = tk.BooleanVar(value=cat_id in self.blocklist.enabled_categories)
+            self.category_vars[cat_id] = var
+            
+            row = tk.Frame(categories_frame, bg=COLORS["bg_dark"])
+            row.pack(fill=tk.X, pady=2)
+            
+            cb = tk.Checkbutton(
+                row,
+                text=cat_data["name"],
+                variable=var,
+                font=self.font_small,
+                fg=COLORS["text_primary"],
+                bg=COLORS["bg_dark"],
+                selectcolor=COLORS["bg_medium"],
+                activebackground=COLORS["bg_dark"],
+                activeforeground=COLORS["text_primary"],
+                command=lambda c=cat_id, v=var: self._toggle_category(c, v.get())
+            )
+            cb.pack(side=tk.LEFT)
+            
+            # Clickable label to show sites in category
+            desc = tk.Label(
+                row,
+                text=f"({len(cat_data['patterns'])} sites)",
+                font=self.font_small,
+                fg=COLORS["accent_primary"],
+                bg=COLORS["bg_dark"]
+            )
+            desc.pack(side=tk.LEFT, padx=(5, 0))
+            # Bind click to show sites popup
+            desc.bind("<Button-1>", lambda e, c=cat_id, d=cat_data: self._show_category_sites(c, d))
+            desc.bind("<Enter>", lambda e, lbl=desc: lbl.configure(fg=COLORS["accent_warm"]))
+            desc.bind("<Leave>", lambda e, lbl=desc: lbl.configure(fg=COLORS["accent_primary"]))
+        
+        # Custom patterns section
+        custom_label = tk.Label(
+            main_container,
+            text="Custom Patterns",
+            font=self.font_status,
+            fg=COLORS["text_primary"],
+            bg=COLORS["bg_dark"]
+        )
+        custom_label.pack(anchor="w", pady=(10, 5))
+        
+        custom_help = tk.Label(
+            main_container,
+            text="Add URLs or app names to block (one per line)",
+            font=self.font_small,
+            fg=COLORS["text_secondary"],
+            bg=COLORS["bg_dark"]
+        )
+        custom_help.pack(anchor="w")
+        
+        # Custom patterns text area
+        custom_frame = tk.Frame(main_container, bg=COLORS["bg_medium"])
+        custom_frame.pack(fill=tk.X, pady=(5, 15))
+        
+        self.custom_text = tk.Text(
+            custom_frame,
+            font=self.font_small,
+            fg=COLORS["text_primary"],
+            bg=COLORS["bg_medium"],
+            insertbackground=COLORS["text_primary"],
+            height=5,
+            wrap=tk.WORD
+        )
+        self.custom_text.pack(fill=tk.X, padx=5, pady=5)
+        
+        # Populate with current custom patterns
+        if self.blocklist.custom_patterns:
+            self.custom_text.insert("1.0", "\n".join(self.blocklist.custom_patterns))
+        
+        # AI Fallback option (advanced) - OFF BY DEFAULT
+        ai_frame = tk.Frame(main_container, bg=COLORS["bg_dark"])
+        ai_frame.pack(fill=tk.X, pady=(10, 15))
+        
+        self.ai_fallback_var = tk.BooleanVar(value=self.use_ai_fallback)
+        ai_cb = tk.Checkbutton(
+            ai_frame,
+            text="Enable AI Screenshot Analysis (disabled by default)",
+            variable=self.ai_fallback_var,
+            font=self.font_small,
+            fg=COLORS["text_secondary"],
+            bg=COLORS["bg_dark"],
+            selectcolor=COLORS["bg_medium"],
+            activebackground=COLORS["bg_dark"],
+            activeforeground=COLORS["text_secondary"],
+        )
+        ai_cb.pack(anchor="w")
+        
+        ai_help = tk.Label(
+            ai_frame,
+            text="⚠️ Takes screenshots - only use if URL detection fails",
+            font=self.font_small,
+            fg=COLORS["accent_warm"],
+            bg=COLORS["bg_dark"]
+        )
+        ai_help.pack(anchor="w", padx=(20, 0))
+        
+        # Buttons - centered at bottom
+        button_frame = tk.Frame(main_container, bg=COLORS["bg_dark"])
+        button_frame.pack(fill=tk.X, pady=(10, 0))
+        
+        # Center the buttons
+        button_container = tk.Frame(button_frame, bg=COLORS["bg_dark"])
+        button_container.pack()
+        
+        save_btn = RoundedButton(
+            button_container,
+            text="Save Settings",
+            command=lambda: self._save_blocklist_settings(settings_window),
+            bg_color=COLORS["button_start"],
+            hover_color=COLORS["button_start_hover"],
+            fg_color=COLORS["text_white"],
+            font=self.font_button,
+            corner_radius=8,
+            width=150,
+            height=44
+        )
+        save_btn.pack(side=tk.LEFT, padx=(0, 10))
+        
+        cancel_btn = RoundedButton(
+            button_container,
+            text="Cancel",
+            command=settings_window.destroy,
+            bg_color=COLORS["button_pause"],
+            hover_color=COLORS["button_pause_hover"],
+            fg_color=COLORS["text_white"],
+            font=self.font_button,
+            corner_radius=8,
+            width=100,
+            height=44
+        )
+        cancel_btn.pack(side=tk.LEFT)
+    
+    def _toggle_category(self, category_id: str, enabled: bool):
+        """
+        Toggle a blocklist category on/off.
+        
+        Args:
+            category_id: The category to toggle
+            enabled: Whether to enable or disable
+        """
+        if enabled:
+            self.blocklist.enable_category(category_id)
+        else:
+            self.blocklist.disable_category(category_id)
+    
+    def _show_category_sites(self, category_id: str, cat_data: dict):
+        """
+        Show a popup with the list of sites in a category.
+        
+        Args:
+            category_id: The category ID
+            cat_data: Category data dictionary with patterns
+        """
+        # Create a small popup window
+        sites_popup = tk.Toplevel(self.root)
+        sites_popup.title(f"{cat_data['name']} Sites")
+        sites_popup.configure(bg="#1E293B")  # Dark background
+        sites_popup.geometry("320x320")
+        sites_popup.resizable(False, False)
+        
+        # Center on parent
+        sites_popup.transient(self.root)
+        self.root.update_idletasks()
+        x = self.root.winfo_x() + (self.root.winfo_width() - 320) // 2
+        y = self.root.winfo_y() + (self.root.winfo_height() - 320) // 2
+        sites_popup.geometry(f"+{x}+{y}")
+        
+        # Make modal to ensure proper event handling
+        sites_popup.grab_set()
+        sites_popup.focus_set()
+        
+        # Main container
+        container = tk.Frame(sites_popup, bg="#1E293B")
+        container.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
+        
+        # Title
+        title = tk.Label(
+            container,
+            text=cat_data['name'],
+            font=self.font_status,
+            fg="#38BDF8",  # Sky blue
+            bg="#1E293B"
+        )
+        title.pack()
+        
+        desc = tk.Label(
+            container,
+            text=cat_data.get('description', ''),
+            font=self.font_small,
+            fg="#94A3B8",  # Secondary text
+            bg="#1E293B"
+        )
+        desc.pack(pady=(0, 10))
+        
+        # Sites list using a Listbox (better for dark themes)
+        list_frame = tk.Frame(container, bg="#334155")
+        list_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Use Listbox instead of Text widget for better compatibility
+        sites_listbox = tk.Listbox(
+            list_frame,
+            font=self.font_small,
+            fg="#F1F5F9",  # Light text
+            bg="#334155",  # Dark slate background
+            selectbackground="#475569",
+            selectforeground="#F1F5F9",
+            highlightthickness=0,
+            bd=0,
+            relief=tk.FLAT
+        )
+        sites_listbox.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        # Insert all sites
+        for pattern in cat_data['patterns']:
+            sites_listbox.insert(tk.END, f"  • {pattern}")
+        
+        # Define close function
+        def close_popup():
+            sites_popup.grab_release()
+            sites_popup.destroy()
+        
+        # Use RoundedButton for consistent styling with rounded corners
+        close_btn = RoundedButton(
+            container,
+            text="Close",
+            command=close_popup,
+            bg_color="#475569",       # Dark slate grey
+            hover_color="#64748B",    # Lighter slate on hover
+            fg_color="#F1F5F9",       # Light text
+            font=self.font_small,
+            corner_radius=10,
+            padx=24,
+            pady=10
+        )
+        close_btn.pack(pady=(12, 0))
+        # Set explicit size for RoundedButton
+        close_btn.configure(width=80, height=36)
+        
+        # Also close on Escape key
+        sites_popup.bind("<Escape>", lambda e: close_popup())
+    
+    def _validate_pattern(self, pattern: str) -> tuple:
+        """
+        Validate a custom blocklist pattern.
+        
+        Args:
+            pattern: The pattern to validate
+            
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        import re
+        pattern = pattern.strip().lower()
+        
+        # Must be at least 3 characters
+        if len(pattern) < 3:
+            return False, f"'{pattern}' is too short (min 3 characters)"
+        
+        # Should look like a domain or app name
+        # Valid: letters, numbers, dots, hyphens, underscores, colons (for ://x.com style)
+        if not re.match(r'^[:a-z0-9][a-z0-9._\-:/]*[a-z0-9]$', pattern):
+            return False, f"'{pattern}' contains invalid characters"
+        
+        # Warn about overly generic single words that could cause false positives
+        generic_terms = {'app', 'web', 'com', 'net', 'org', 'the', 'new', 'pro'}
+        if pattern in generic_terms:
+            return False, f"'{pattern}' is too generic and may cause false positives"
+        
+        # Check for patterns that are too short without a dot (likely incomplete)
+        if len(pattern) <= 4 and '.' not in pattern:
+            return False, f"'{pattern}' is too short - use full domain (e.g., {pattern}.com)"
+        
+        return True, ""
+    
+    def _save_blocklist_settings(self, settings_window: tk.Toplevel):
+        """
+        Save blocklist settings and close the dialog.
+        Validates patterns and handles duplicates gracefully.
+        
+        Args:
+            settings_window: The settings window to close
+        """
+        # Get custom patterns from text area
+        custom_text = self.custom_text.get("1.0", tk.END).strip()
+        raw_patterns = [p.strip().lower() for p in custom_text.split("\n") if p.strip()]
+        
+        # Validate each pattern
+        valid_patterns = []
+        invalid_patterns = []
+        
+        for pattern in raw_patterns:
+            is_valid, error = self._validate_pattern(pattern)
+            if is_valid:
+                valid_patterns.append(pattern)
+            else:
+                invalid_patterns.append(error)
+        
+        # If there are invalid patterns, show error and don't save
+        if invalid_patterns:
+            error_msg = "Some patterns are invalid:\n\n" + "\n".join(invalid_patterns[:5])
+            if len(invalid_patterns) > 5:
+                error_msg += f"\n... and {len(invalid_patterns) - 5} more"
+            error_msg += "\n\nPlease fix these and try again."
+            messagebox.showerror("Invalid Patterns", error_msg)
+            return  # Don't close dialog, let user fix
+        
+        # Remove duplicates within custom patterns (case-insensitive)
+        seen = set()
+        unique_patterns = []
+        duplicates_removed = []
+        
+        for pattern in valid_patterns:
+            if pattern not in seen:
+                seen.add(pattern)
+                unique_patterns.append(pattern)
+            else:
+                duplicates_removed.append(pattern)
+        
+        # Check for overlaps with preset categories
+        preset_patterns = set()
+        for cat_id in self.blocklist.enabled_categories:
+            if cat_id in PRESET_CATEGORIES:
+                for p in PRESET_CATEGORIES[cat_id]['patterns']:
+                    preset_patterns.add(p.lower())
+        
+        # Filter out patterns that already exist in enabled preset categories
+        preset_overlaps = []
+        final_patterns = []
+        for pattern in unique_patterns:
+            if pattern in preset_patterns:
+                preset_overlaps.append(pattern)
+            else:
+                final_patterns.append(pattern)
+        
+        # Update blocklist with validated, deduplicated patterns
+        self.blocklist.custom_patterns = final_patterns
+        
+        # Update AI fallback setting
+        self.use_ai_fallback = self.ai_fallback_var.get()
+        
+        # Save to file
+        self.blocklist_manager.save(self.blocklist)
+        
+        # Show message if any duplicates were handled
+        messages = []
+        if duplicates_removed:
+            messages.append(f"Removed {len(duplicates_removed)} duplicate(s)")
+        if preset_overlaps:
+            messages.append(f"Removed {len(preset_overlaps)} pattern(s) already in preset categories")
+        
+        if messages:
+            messagebox.showinfo(
+                "Blocklist Saved",
+                "\n".join(messages) + "\n\nSettings saved successfully."
+            )
+        
+        # Close dialog
+        settings_window.destroy()
+        
+        logger.info(f"Blocklist settings saved (AI fallback: {self.use_ai_fallback}, "
+                   f"duplicates removed: {len(duplicates_removed)}, "
+                   f"preset overlaps: {len(preset_overlaps)})")
     
     def _draw_status_dot(self, color: str, emoji: str = None):
         """
@@ -1438,8 +1980,9 @@ By clicking 'I Understand', you acknowledge this data processing."""
             self._show_lockout_overlay()
             return
         
-        # Verify API key exists
-        if not config.OPENAI_API_KEY:
+        # Verify API key exists (only required for camera modes)
+        needs_camera = self.monitoring_mode in (config.MODE_CAMERA_ONLY, config.MODE_BOTH)
+        if needs_camera and not config.OPENAI_API_KEY:
             messagebox.showerror(
                 "API Key Required",
                 "OpenAI API key not found!\n\n"
@@ -1465,6 +2008,9 @@ By clicking 'I Understand', you acknowledge this data processing."""
         self.unfocused_start_time = None
         self.alerts_played = 0
         
+        # Hide mode selector during session
+        self.mode_frame.grid_remove()
+        
         # Update UI - show both buttons (pause on top, stop below)
         self._update_status("focused", "Booting Up...", emoji="⚡️")
         
@@ -1483,14 +2029,36 @@ By clicking 'I Understand', you acknowledge this data processing."""
             hover_color=COLORS["button_stop_hover"]
         )
         
-        # Start detection thread
-        self.detection_thread = threading.Thread(
-            target=self._detection_loop,
-            daemon=True
-        )
-        self.detection_thread.start()
+        # Start appropriate detection thread(s) based on monitoring mode
+        if self.monitoring_mode == config.MODE_CAMERA_ONLY:
+            # Camera only mode (existing behavior)
+            self.detection_thread = threading.Thread(
+                target=self._detection_loop,
+                daemon=True
+            )
+            self.detection_thread.start()
+        elif self.monitoring_mode == config.MODE_SCREEN_ONLY:
+            # Screen only mode
+            self.detection_thread = threading.Thread(
+                target=self._screen_detection_loop,
+                daemon=True
+            )
+            self.detection_thread.start()
+        else:
+            # Both camera and screen monitoring
+            self.detection_thread = threading.Thread(
+                target=self._detection_loop,
+                daemon=True
+            )
+            self.detection_thread.start()
+            
+            self.screen_detection_thread = threading.Thread(
+                target=self._screen_detection_loop,
+                daemon=True
+            )
+            self.screen_detection_thread.start()
         
-        logger.info("Session started via GUI")
+        logger.info(f"Session started via GUI (mode: {self.monitoring_mode})")
     
     def _stop_session(self):
         """Stop the current session INSTANTLY and auto-generate report."""
@@ -1511,9 +2079,14 @@ By clicking 'I Understand', you acknowledge this data processing."""
         self.should_stop.set()
         self.is_running = False
         
-        # Wait for detection thread to finish
+        # Wait for detection thread(s) to finish
         if self.detection_thread and self.detection_thread.is_alive():
             self.detection_thread.join(timeout=2.0)
+        if self.screen_detection_thread and self.screen_detection_thread.is_alive():
+            self.screen_detection_thread.join(timeout=2.0)
+        
+        # Show mode selector again
+        self.mode_frame.grid()
         
         # End session (only if it was actually started after first detection)
         if self.session and self.session_started and self.session_start_time:
@@ -1644,6 +2217,126 @@ By clicking 'I Understand', you acknowledge this data processing."""
             logger.error(f"Detection loop error: {e}")
             self.root.after(0, lambda: self._show_detection_error(str(e)))
     
+    def _screen_detection_loop(self):
+        """
+        Screen monitoring detection loop running in a separate thread.
+        
+        Checks active window and browser URL against the blocklist.
+        Does NOT use AI API calls - purely local pattern matching.
+        """
+        try:
+            window_detector = WindowDetector()
+            
+            # Check permissions on first run
+            if not window_detector.check_permission():
+                instructions = window_detector.get_permission_instructions()
+                self.root.after(0, lambda: self._show_screen_permission_error(instructions))
+                return
+            
+            last_screen_check = time.time()
+            
+            # For screen-only mode, we need to start the session on first check
+            if self.monitoring_mode == config.MODE_SCREEN_ONLY:
+                # Start session immediately for screen-only mode
+                if not self.session_started:
+                    self.session.start()
+                    self.session_start_time = datetime.now()
+                    self.session_started = True
+                    logger.info("Screen-only mode - session timer started")
+                    # Update UI to show focused status
+                    self.root.after(0, lambda: self._update_status("focused", "Focused"))
+            
+            while not self.should_stop.is_set():
+                # Skip when paused
+                if self.is_paused:
+                    time.sleep(0.1)
+                    continue
+                
+                current_time = time.time()
+                time_since_check = current_time - last_screen_check
+                
+                if time_since_check >= config.SCREEN_CHECK_INTERVAL:
+                    # Get current screen state (with optional AI fallback)
+                    if self.use_ai_fallback:
+                        screen_state = get_screen_state_with_ai_fallback(
+                            self.blocklist,
+                            use_ai_fallback=True
+                        )
+                    else:
+                        screen_state = get_screen_state(self.blocklist)
+                    
+                    if self.should_stop.is_set():
+                        break
+                    
+                    if self.is_paused:
+                        continue
+                    
+                    # Check for distraction
+                    if screen_state.get("is_distracted", False):
+                        distraction_source = screen_state.get("distraction_source", "Unknown")
+                        
+                        # Log event
+                        if self.session and self.session_started:
+                            self.session.log_event(config.EVENT_SCREEN_DISTRACTION)
+                        
+                        # Update UI (thread-safe)
+                        self.root.after(0, lambda s=distraction_source: self._update_status(
+                            "screen", 
+                            f"Screen: {s[:20]}..." if len(s) > 20 else f"Screen: {s}"
+                        ))
+                        
+                        # Track for alerts (same as camera distraction)
+                        if self.unfocused_start_time is None:
+                            self.unfocused_start_time = current_time
+                            self.alerts_played = 0
+                            logger.debug("Started tracking screen distraction time")
+                        
+                        # Check for escalating alerts
+                        unfocused_duration = current_time - self.unfocused_start_time
+                        alert_times = config.UNFOCUSED_ALERT_TIMES
+                        
+                        if (self.alerts_played < len(alert_times) and
+                            unfocused_duration >= alert_times[self.alerts_played]):
+                            self._play_unfocused_alert()
+                            self.alerts_played += 1
+                    else:
+                        # Not distracted - only update if screen-only mode or if camera didn't detect distraction
+                        if self.monitoring_mode == config.MODE_SCREEN_ONLY:
+                            if self.session and self.session_started:
+                                self.session.log_event(config.EVENT_PRESENT)
+                            self.root.after(0, lambda: self._update_status("focused", "Focused"))
+                            
+                            # Reset alert tracking
+                            if self.unfocused_start_time is not None:
+                                logger.debug("Screen refocused - resetting alert tracking")
+                                self.root.after(0, self._dismiss_alert_popup)
+                            self.unfocused_start_time = None
+                            self.alerts_played = 0
+                    
+                    last_screen_check = current_time
+                
+                # Small sleep to prevent CPU overload
+                time.sleep(0.1)
+                
+        except Exception as e:
+            logger.error(f"Screen detection loop error: {e}")
+            self.root.after(0, lambda: self._show_detection_error(f"Screen monitoring: {str(e)}"))
+    
+    def _show_screen_permission_error(self, instructions: str):
+        """
+        Show an error message when screen monitoring permissions are missing.
+        
+        Args:
+            instructions: Platform-specific permission instructions
+        """
+        messagebox.showerror(
+            "Screen Monitoring Permission Required",
+            f"Screen monitoring cannot access window information.\n\n{instructions}"
+        )
+        # Stop the session since screen monitoring failed
+        if self.is_running and self.monitoring_mode == config.MODE_SCREEN_ONLY:
+            self._stop_session()
+    
     def _handle_time_exhausted(self):
         """
         Handle time exhaustion during a running session.
@@ -1749,6 +2442,7 @@ By clicking 'I Understand', you acknowledge this data processing."""
             config.EVENT_PRESENT: ("focused", "Focused"),
             config.EVENT_AWAY: ("away", "Away from Desk"),
             config.EVENT_GADGET_SUSPECTED: ("gadget", "On another gadget"),
+            config.EVENT_SCREEN_DISTRACTION: ("screen", "Screen distraction"),
         }
         
         status, text = status_map.get(event_type, ("idle", "Unknown"))
@@ -1761,7 +2455,7 @@ By clicking 'I Understand', you acknowledge this data processing."""
         Update the status indicator and label.
         
         Args:
-            status: Status type (idle, focused, away, gadget, paused)
+            status: Status type (idle, focused, away, gadget, screen, paused)
             text: Display text
             emoji: Optional emoji to show instead of the colored dot
         """

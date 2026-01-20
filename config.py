@@ -45,6 +45,17 @@ EVENT_PRESENT = "present"
 EVENT_AWAY = "away"
 EVENT_GADGET_SUSPECTED = "gadget_suspected"
 EVENT_PAUSED = "paused"  # User manually paused the session
+EVENT_SCREEN_DISTRACTION = "screen_distraction"  # Distracting website/app detected
+
+# Monitoring modes
+MODE_CAMERA_ONLY = "camera_only"  # Default - only camera monitoring
+MODE_SCREEN_ONLY = "screen_only"  # Only screen monitoring (no camera)
+MODE_BOTH = "both"  # Camera + screen monitoring
+
+# Screen monitoring settings
+SCREEN_CHECK_INTERVAL = 3  # Seconds between screen checks (cheaper than camera)
+SCREEN_SETTINGS_FILE = BASE_DIR / "data" / "blocklist.json"  # Blocklist persistence
+SCREEN_AI_FALLBACK_ENABLED = False  # Enable AI Vision fallback (costs ~$0.001-0.002 per check)
 
 # Unfocused alert settings
 # Alert plays at each of these thresholds (in seconds) when user is unfocused
