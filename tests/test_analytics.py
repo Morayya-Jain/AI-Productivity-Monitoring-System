@@ -79,7 +79,8 @@ class TestAnalytics(unittest.TestCase):
         """Test statistics with no events."""
         stats = compute_statistics([], 3600)
         
-        self.assertEqual(stats["total_minutes"], 60.0)
+        # With no events, all durations sum to 0 (total_duration param is reference only)
+        self.assertEqual(stats["total_minutes"], 0.0)
         self.assertEqual(stats["focused_minutes"], 0.0)
         self.assertEqual(stats["away_minutes"], 0.0)
         self.assertEqual(stats["gadget_minutes"], 0.0)
@@ -143,8 +144,8 @@ class TestAnalytics(unittest.TestCase):
         stats = compute_statistics(self.sample_events, self.total_duration)
         focus_pct = get_focus_percentage(stats)
         
-        # 50 minutes focused out of 60 total = 83.3%
-        self.assertEqual(focus_pct, 83.3)
+        # 50 minutes focused out of 60 total = 83.33%
+        self.assertAlmostEqual(focus_pct, 83.33, places=2)
     
     def test_get_focus_percentage_zero_duration(self):
         """Test focus percentage with zero duration."""

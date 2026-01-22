@@ -41,6 +41,7 @@ data/.privacy_accepted
 data/.braindock_instance.lock
 data/usage_data.json
 data/blocklist.json
+data/license.json
 reports/
 *.log
 

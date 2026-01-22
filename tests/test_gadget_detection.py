@@ -101,10 +101,10 @@ try:
                 # Print results
                 print("─" * 55)
                 print(f"  Person Present:    {result['person_present']}")
+                print(f"  At Desk:           {result.get('at_desk', 'N/A')}")
                 print(f"  Gadget Visible:    {result['gadget_visible']}")
                 print(f"  Gadget Confidence: {result['gadget_confidence']:.2f}")
                 print(f"  Distraction Type:  {result['distraction_type']}")
-                print(f"  Description:       {result['description']}")
                 print("─" * 55)
                 
                 # Interpretation

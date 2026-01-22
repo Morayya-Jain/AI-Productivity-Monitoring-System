@@ -83,3 +83,15 @@ MVP_LIMIT_SECONDS = 7200  # Initial time limit in seconds (default: 2 hours)
 MVP_EXTENSION_SECONDS = 7200  # Time added per password unlock in seconds (default: 2 hours)
 MVP_UNLOCK_PASSWORD = os.getenv("MVP_UNLOCK_PASSWORD", "")  # Password to unlock more time
 USAGE_DATA_FILE = BASE_DIR / "data" / "usage_data.json"
+
+# Stripe Payment Configuration
+# Get your keys from: https://dashboard.stripe.com/apikeys
+STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")  # sk_live_... or sk_test_...
+STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY", "")  # pk_live_... or pk_test_...
+STRIPE_PRICE_ID = os.getenv("STRIPE_PRICE_ID", "")  # price_... (from Stripe product)
+PRODUCT_PRICE_DISPLAY = os.getenv("PRODUCT_PRICE_DISPLAY", "One-time payment")  # Display text
+
+# Licensing Configuration
+LICENSE_FILE = BASE_DIR / "data" / "license.json"
+LICENSE_KEYS_FILE = BASE_DIR / "data" / "license_keys.json"  # Hashed valid keys
+SKIP_LICENSE_CHECK = os.getenv("SKIP_LICENSE_CHECK", "").lower() in ("true", "1", "yes")

@@ -5,3 +5,4 @@ python-dotenv>=1.0.0
 mediapipe>=0.10.0
 pillow>=10.0.0
 pyobjc-framework-Cocoa>=10.0; sys_platform == 'darwin'
+stripe>=7.0.0

@@ -57,9 +57,13 @@ THEMES = {
         "accent_primary": "#3B82F6",    # Primary accent (blue)
         "accent_warm": "#F59E0B",       # Warm accent for alerts
         "status_focused": "#10B981",    # Green for focused
+        "status_focused_bg": "#D1FAE5", # Light green background
         "status_away": "#F59E0B",       # Amber for away
+        "status_away_bg": "#FEF3C7",    # Light amber background
         "status_gadget": "#EF4444",     # Red for gadget distraction
+        "status_gadget_bg": "#FEE2E2",  # Light red background
         "status_screen": "#8B5CF6",     # Purple for screen distraction
+        "status_screen_bg": "#EDE9FE",  # Light purple background
         "status_idle": "#9CA3AF",       # Gray for idle
         "status_paused": "#6B7280",     # Muted gray for paused
         "button_start": "#10B981",      # Green start button
@@ -94,9 +98,13 @@ THEMES = {
         "accent_primary": "#60A5FA",
         "accent_warm": "#FBBF24",
         "status_focused": "#34D399",
+        "status_focused_bg": "#064E3B",  # Dark green background
         "status_away": "#FBBF24",
+        "status_away_bg": "#78350F",     # Dark amber background
         "status_gadget": "#F87171",
+        "status_gadget_bg": "#7F1D1D",   # Dark red background
         "status_screen": "#A78BFA",
+        "status_screen_bg": "#4C1D95",   # Dark purple background
         "status_idle": "#6B7280",
         "status_paused": "#9CA3AF",
         "button_start": "#10B981",
@@ -1128,7 +1136,7 @@ class BrainDockGUI:
         Uses PyObjC if available.
         """
         try:
-            from AppKit import NSApplication, NSAppearance
+            from AppKit import NSApplication, NSAppearance  # type: ignore[import-not-found]
             
             # Get the shared application instance
             app = NSApplication.sharedApplication()
@@ -1159,7 +1167,7 @@ class BrainDockGUI:
         )
         
         self.font_status = tkfont.Font(
-            family=font_family, size=15, weight="normal"
+            family=font_family, size=16, weight="normal"
         )
         
         self.font_button = tkfont.Font(
@@ -1215,17 +1223,13 @@ class BrainDockGUI:
             if hasattr(self, 'pause_btn'):
                 self.pause_btn.configure(width=new_btn_width, height=new_btn_height)
                 self.pause_btn._draw_button()
-            
-            # Scale status card height proportionally
-            if hasattr(self, 'status_card'):
-                new_card_height = max(50, int(60 * new_scale))
-                self.status_card.configure(height=new_card_height)
     
     def _get_current_status_color(self) -> str:
         """Get the color for the current status."""
         color_map = {
             "idle": COLORS["status_idle"],
             "focused": COLORS["status_focused"],
+            "booting": COLORS["status_focused"],  # Green text for booting
             "away": COLORS["status_away"],
             "gadget": COLORS["status_gadget"],
             "screen": COLORS["status_screen"],
@@ -1233,15 +1237,32 @@ class BrainDockGUI:
         }
         return color_map.get(self.current_status, COLORS["status_idle"])
     
+    def _get_status_bg_color(self, status: str) -> str:
+        """Get the background color for a status (lighter tint of status color)."""
+        bg_map = {
+            "idle": COLORS["bg_tertiary"],           # Keep grey for idle
+            "focused": COLORS["status_focused_bg"],  # Light green
+            "booting": COLORS["bg_tertiary"],        # Keep grey for booting
+            "away": COLORS["status_away_bg"],        # Light amber
+            "gadget": COLORS["status_gadget_bg"],    # Light red
+            "screen": COLORS["status_screen_bg"],    # Light purple
+            "paused": COLORS["bg_tertiary"],         # Keep grey for paused
+        }
+        return bg_map.get(status, COLORS["bg_tertiary"])
+    
     def _create_widgets(self):
         """Create all UI widgets with scalable layout."""
+        # --- Header Section (Logo left, Timer right) - positioned at top with minimal padding ---
+        header_frame = tk.Frame(self.root, bg=COLORS["bg_primary"])
+        header_frame.pack(fill=tk.X, padx=20, pady=(20, 0))
+        
         # Main container using grid for proportional spacing
         self.main_frame = tk.Frame(self.root, bg=COLORS["bg_primary"])
-        self.main_frame.pack(fill=tk.BOTH, expand=True, padx=50, pady=40)
+        self.main_frame.pack(fill=tk.BOTH, expand=True, padx=50, pady=(20, 40))
         
         # Configure grid rows with weights for proportional expansion
         # Row 0: Spacer (expands)
-        # Row 1: Title (fixed)
+        # Row 1: (was Title, now empty)
         # Row 2: Spacer (expands)
         # Row 3: Status card (fixed)
         # Row 4: Spacer (expands more)
@@ -1251,8 +1272,8 @@ class BrainDockGUI:
         # Row 8: Spacer (expands)
         
         self.main_frame.grid_columnconfigure(0, weight=1)
-        self.main_frame.grid_rowconfigure(0, minsize=20, weight=0)   # Top spacer (smaller)
-        self.main_frame.grid_rowconfigure(1, weight=0)   # Title
+        self.main_frame.grid_rowconfigure(0, minsize=10, weight=1)   # Top spacer
+        self.main_frame.grid_rowconfigure(1, weight=0)   # (empty)
         self.main_frame.grid_rowconfigure(2, weight=1)   # Spacer
         self.main_frame.grid_rowconfigure(8, weight=0)   # Mode selector (added)
         self.main_frame.grid_rowconfigure(3, weight=0)   # Status
@@ -1262,13 +1283,9 @@ class BrainDockGUI:
         self.main_frame.grid_rowconfigure(7, weight=0)   # Button
         self.main_frame.grid_rowconfigure(8, weight=1)   # Bottom spacer
         
-        # --- Title Section with Logo ---
-        title_frame = tk.Frame(self.main_frame, bg=COLORS["bg_primary"])
-        title_frame.grid(row=1, column=0, sticky="ew", pady=(0, 0))
-        
-        # Logo with text container (centered)
-        logo_title_frame = tk.Frame(title_frame, bg=COLORS["bg_primary"])
-        logo_title_frame.pack()
+        # Logo container (left aligned)
+        logo_frame = tk.Frame(header_frame, bg=COLORS["bg_primary"])
+        logo_frame.pack(side=tk.LEFT, anchor="nw")
         
         # Load and display logo with text (combined image)
         self.logo_image = None
@@ -1289,55 +1306,55 @@ class BrainDockGUI:
                     if bbox:
                         img = img.crop(bbox)
                     
-                    # Resize proportionally - target height of 50px
-                    target_height = 50
+                    # Resize proportionally - smaller height of 28px
+                    target_height = 28
                     aspect_ratio = img.width / img.height
                     target_width = int(target_height * aspect_ratio)
                     img = img.resize((target_width, target_height), Image.Resampling.LANCZOS)
                     self.logo_image = ImageTk.PhotoImage(img)
                     self.logo_label = tk.Label(
-                        logo_title_frame,
+                        logo_frame,
                         image=self.logo_image,
                         bg=COLORS["bg_primary"]
                     )
-                    self.logo_label.pack()
+                    self.logo_label.pack(anchor="w")
                 except Exception as e:
                     logger.warning(f"Could not load logo: {e}")
                     # Fallback to text-only title
                     self.title_label = tk.Label(
-                        logo_title_frame,
+                        logo_frame,
                         text="BrainDock",
                         font=self.font_title,
                         fg=COLORS["text_primary"],
                         bg=COLORS["bg_primary"]
                     )
-                    self.title_label.pack()
+                    self.title_label.pack(anchor="w")
             else:
                 # Fallback to text-only title if image not found
                 self.title_label = tk.Label(
-                    logo_title_frame,
+                    logo_frame,
                     text="BrainDock",
                     font=self.font_title,
                     fg=COLORS["text_primary"],
                     bg=COLORS["bg_primary"]
                 )
-                self.title_label.pack()
+                self.title_label.pack(anchor="w")
         else:
             # Fallback to text-only title if PIL not available
             self.title_label = tk.Label(
-                logo_title_frame,
+                logo_frame,
                 text="BrainDock",
                 font=self.font_title,
                 fg=COLORS["text_primary"],
                 bg=COLORS["bg_primary"]
             )
-            self.title_label.pack()
+            self.title_label.pack(anchor="w")
         
-        # --- Time Remaining Badge (clickable for details) ---
-        self.time_badge_frame = tk.Frame(title_frame, bg=COLORS["bg_primary"])
-        self.time_badge_frame.pack(pady=(15, 0))
+        # --- Time Remaining Badge (right aligned) ---
+        self.time_badge_frame = tk.Frame(header_frame, bg=COLORS["bg_primary"])
+        self.time_badge_frame.pack(side=tk.RIGHT, anchor="ne")
         
-        # Rounded badge for time remaining - subtle style for light theme
+        # Rounded badge for time remaining - compact style
         self.time_badge = RoundedBadge(
             self.time_badge_frame,
             text="2h 0m left",
@@ -1345,12 +1362,12 @@ class BrainDockGUI:
             hover_color=COLORS["bg_tertiary"],
             fg_color=COLORS["text_secondary"],
             font=self.font_badge,
-            corner_radius=8,
-            padx=16,
-            pady=6,
+            corner_radius=6,
+            padx=12,
+            pady=4,
             clickable=True,
-            width=120,
-            height=34
+            width=95,
+            height=28
         )
         self.time_badge.pack()
         self.time_badge.bind_click(self._show_usage_details)
@@ -1358,43 +1375,22 @@ class BrainDockGUI:
         # Lockout overlay (hidden by default)
         self.lockout_frame: Optional[tk.Frame] = None
         
-        # --- Status Card (Rounded with border) ---
-        status_container = tk.Frame(self.main_frame, bg=COLORS["bg_primary"])
-        status_container.grid(row=3, column=0, sticky="ew", padx=40)
+        # --- Status Badge (Pill style) ---
+        status_badge_frame = tk.Frame(self.main_frame, bg=COLORS["bg_primary"])
+        status_badge_frame.grid(row=3, column=0, pady=(10, 0))
         
-        self.status_card = RoundedFrame(
-            status_container,
-            bg_color=COLORS["bg_card"],
-            corner_radius=12,
-            border_color=COLORS["border"],
-            border_width=4,
-            height=70
-        )
-        self.status_card.pack(fill=tk.X)
-        
-        # Status content frame (inside the rounded card)
-        self.status_content = tk.Frame(self.status_card, bg=COLORS["bg_card"])
-        self.status_content.place(relx=0.5, rely=0.5, anchor="center")
-        
-        # Status dot (using canvas for round shape)
-        self.status_dot = tk.Canvas(
-            self.status_content,
-            width=14,
-            height=14,
-            bg=COLORS["bg_card"],
-            highlightthickness=0
-        )
-        self.status_dot.pack(side=tk.LEFT, padx=(0, 10))
-        self._draw_status_dot(COLORS["status_idle"])
-        
-        self.status_label = tk.Label(
-            self.status_content,
-            text="Ready to Start",
+        # Status badge - compact pill style with slightly grey background
+        self.status_badge = RoundedBadge(
+            status_badge_frame,
+            text="● Ready to Start",
+            bg_color=COLORS["bg_tertiary"],
+            fg_color=COLORS["status_idle"],
             font=self.font_status,
-            fg=COLORS["text_primary"],
-            bg=COLORS["bg_card"]
+            corner_radius=10,
+            padx=28,
+            pady=10
         )
-        self.status_label.pack(side=tk.LEFT)
+        self.status_badge.pack()
         
         # --- Timer Display ---
         timer_frame = tk.Frame(self.main_frame, bg=COLORS["bg_primary"])
@@ -1466,19 +1462,9 @@ class BrainDockGUI:
         self.mode_frame = tk.Frame(self.main_frame, bg=COLORS["bg_primary"])
         self.mode_frame.grid(row=8, column=0, sticky="ew", pady=(25, 0))
         
-        # Mode label
-        mode_label = tk.Label(
-            self.mode_frame,
-            text="Monitoring Mode",
-            font=self.font_small,
-            fg=COLORS["text_secondary"],
-            bg=COLORS["bg_primary"]
-        )
-        mode_label.pack()
-        
         # Mode buttons container
         mode_buttons_frame = tk.Frame(self.mode_frame, bg=COLORS["bg_primary"])
-        mode_buttons_frame.pack(pady=(8, 0))
+        mode_buttons_frame.pack()
         
         # Create mode toggle buttons
         self.mode_var = tk.StringVar(value=config.MODE_CAMERA_ONLY)
@@ -1508,7 +1494,7 @@ class BrainDockGUI:
         
         # Settings button (for blocklist management) - text link style
         settings_frame = tk.Frame(self.mode_frame, bg=COLORS["bg_primary"])
-        settings_frame.pack(pady=(12, 0))
+        settings_frame.pack(pady=(25, 0))
         
         self.settings_btn = tk.Label(
             settings_frame,
@@ -1521,6 +1507,19 @@ class BrainDockGUI:
         self.settings_btn.bind("<Button-1>", lambda e: self._show_blocklist_settings())
         self.settings_btn.bind("<Enter>", lambda e: self.settings_btn.configure(fg=COLORS["status_focused"]))
         self.settings_btn.bind("<Leave>", lambda e: self.settings_btn.configure(fg=COLORS["accent_primary"]))
+        
+        # Tutorial button - right under Blocklist Settings
+        self.tutorial_btn = tk.Label(
+            settings_frame,
+            text="How To Use",
+            font=self.font_small,
+            fg=COLORS["accent_primary"],
+            bg=COLORS["bg_primary"]
+        )
+        self.tutorial_btn.pack(pady=(3, 0))
+        self.tutorial_btn.bind("<Button-1>", lambda e: self._show_tutorial())
+        self.tutorial_btn.bind("<Enter>", lambda e: self.tutorial_btn.configure(fg=COLORS["status_focused"]))
+        self.tutorial_btn.bind("<Leave>", lambda e: self.tutorial_btn.configure(fg=COLORS["accent_primary"]))
     
     def _set_monitoring_mode(self, mode: str):
         """
@@ -2856,27 +2855,248 @@ class BrainDockGUI:
                    f"duplicates removed: {len(duplicates_removed)}, "
                    f"preset overlaps: {len(preset_overlaps)})")
     
-    def _draw_status_dot(self, color: str, emoji: str = None):
+    def _show_tutorial(self):
         """
-        Draw the status indicator dot (circle) or emoji.
+        Show the tutorial popup explaining how to use BrainDock.
+        
+        Displays a scrollable guide with icons and text descriptions covering:
+        - Starting a session
+        - Status indicators
+        - Timer
+        - Monitoring modes
+        - Pause/Resume
+        - Reports
+        """
+        # Create tutorial window (larger size for better readability)
+        tutorial_window = tk.Toplevel(self.root)
+        tutorial_window.title("How to Use BrainDock")
+        tutorial_window.configure(bg=COLORS["bg_primary"])
+        
+        window_width = 620
+        window_height = 580
+        tutorial_window.geometry(f"{window_width}x{window_height}")
+        tutorial_window.resizable(False, False)
+        
+        # Center on parent window
+        tutorial_window.transient(self.root)
+        tutorial_window.grab_set()
+        
+        x = self.root.winfo_x() + (self.root.winfo_width() - window_width) // 2
+        y = self.root.winfo_y() + (self.root.winfo_height() - window_height) // 2
+        tutorial_window.geometry(f"+{x}+{y}")
+        
+        # Main container with padding
+        main_container = tk.Frame(tutorial_window, bg=COLORS["bg_primary"])
+        main_container.pack(fill=tk.BOTH, expand=True, padx=25, pady=20)
+        
+        # Header
+        title = tk.Label(
+            main_container,
+            text="How to Use BrainDock",
+            font=self.font_title,
+            fg=COLORS["accent_primary"],
+            bg=COLORS["bg_primary"]
+        )
+        title.pack()
+        
+        subtitle = tk.Label(
+            main_container,
+            text="Your AI-powered focus companion",
+            font=self.font_small,
+            fg=COLORS["text_secondary"],
+            bg=COLORS["bg_primary"]
+        )
+        subtitle.pack(pady=(5, 20))
+        
+        # Scrollable content area
+        canvas_frame = tk.Frame(main_container, bg=COLORS["bg_primary"])
+        canvas_frame.pack(fill=tk.BOTH, expand=True)
+        
+        content_width = 550
+        canvas = tk.Canvas(
+            canvas_frame,
+            bg=COLORS["bg_primary"],
+            highlightthickness=0,
+            width=content_width
+        )
+        scrollbar = tk.Scrollbar(canvas_frame, orient="vertical", command=canvas.yview)
+        scrollable_frame = tk.Frame(canvas, bg=COLORS["bg_primary"])
+        
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas_window = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw", width=content_width)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # Enable smooth mousewheel scrolling (pixel-based, not unit-based)
+        def _on_mousewheel(event):
+            # Get current scroll position and total scrollable height
+            # Use yview to scroll by a small fraction for smooth scrolling
+            if sys.platform == "darwin":
+                # macOS: delta is typically small integers, scroll proportionally
+                # Negative delta = scroll down, positive = scroll up
+                scroll_amount = -event.delta * 0.01  # Small fraction for smooth scroll
+            else:
+                # Windows/Linux: delta is typically 120 per notch
+                scroll_amount = -event.delta / 120 * 0.05  # Smooth scroll factor
+            
+            # Get current position and adjust
+            current_pos = canvas.yview()[0]
+            new_pos = current_pos + scroll_amount
+            # Clamp to valid range [0, 1]
+            new_pos = max(0, min(1, new_pos))
+            canvas.yview_moveto(new_pos)
+        
+        # Bind to canvas and scrollable frame directly (not bind_all)
+        canvas.bind("<MouseWheel>", _on_mousewheel)
+        scrollable_frame.bind("<MouseWheel>", _on_mousewheel)
+        
+        # Bind to all children as they're created
+        def _bind_mousewheel_to_widget(widget):
+            widget.bind("<MouseWheel>", _on_mousewheel)
+            for child in widget.winfo_children():
+                _bind_mousewheel_to_widget(child)
+        
+        # Store the bind function for later use after content is created
+        self._tutorial_bind_mousewheel = _bind_mousewheel_to_widget
+        self._tutorial_canvas = canvas
+        self._tutorial_on_mousewheel = _on_mousewheel
+        
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Tutorial sections data (icon, title, description)
+        tutorial_sections = [
+            (
+                "\u25B6",  # Play triangle
+                COLORS["button_start"],
+                "Start a Session",
+                "Click the green 'Start Session' button to begin your focus session. "
+                "BrainDock will always help you stay on task."
+            ),
+            (
+                "\u25CF",  # Filled circle (status dot)
+                COLORS["status_focused"],
+                "Stay Focused",
+                "The status indicator shows your current state:\n"
+                "\u2022 Green = Focused and on task\n"
+                "\u2022 Orange = Away from desk\n"
+                "\u2022 Red = Gadget distraction detected\n"
+                "\u2022 Purple = Screen distraction detected"
+            ),
+            (
+                "\u23F1",  # Stopwatch
+                COLORS["accent_primary"],
+                "See Your Time",
+                "The timer displays your session duration. See how long you've been "
+                "focused and aim to improve your quality focus time each session."
+            ),
+            (
+                "\u2699",  # Gear/settings
+                COLORS["text_secondary"],
+                "Choose Your Mode",
+                "Select how BrainDock helps you focus:\n"
+                "\u2022 Camera \u2014 Uses AI to detect distractions\n"
+                "\u2022 Screen \u2014 Checks for distracting apps/websites\n"
+                "\u2022 Both \u2014 Combined detection"
+            ),
+            (
+                "\u23F8",  # Pause symbol
+                COLORS["button_pause"],
+                "Pause Anytime",
+                "Click 'Pause Session' if you need to step away. Your session stays active "
+                "and you can resume whenever you're ready."
+            ),
+            (
+                "\u2193",  # Down arrow (download)
+                COLORS["accent_warm"],
+                "Get Your Report",
+                "When you stop your session, a PDF report is automatically saved to "
+                "your Downloads folder with your focus statistics and a session summary."
+            ),
+        ]
+        
+        # Create tutorial sections
+        for i, (icon, icon_color, section_title, description) in enumerate(tutorial_sections):
+            section_frame = tk.Frame(scrollable_frame, bg=COLORS["bg_primary"])
+            section_frame.pack(fill=tk.X, pady=(0, 15))
+            
+            # Icon and title row
+            header_frame = tk.Frame(section_frame, bg=COLORS["bg_primary"])
+            header_frame.pack(fill=tk.X, anchor="w")
+            
+            # Icon label
+            icon_label = tk.Label(
+                header_frame,
+                text=icon,
+                font=tkfont.Font(family="SF Pro Display", size=18),
+                fg=icon_color,
+                bg=COLORS["bg_primary"]
+            )
+            icon_label.pack(side=tk.LEFT, padx=(0, 10))
+            
+            # Section title
+            title_label = tk.Label(
+                header_frame,
+                text=section_title,
+                font=self.font_status,
+                fg=COLORS["text_primary"],
+                bg=COLORS["bg_primary"]
+            )
+            title_label.pack(side=tk.LEFT)
+            
+            # Description
+            desc_label = tk.Label(
+                section_frame,
+                text=description,
+                font=self.font_small,
+                fg=COLORS["text_secondary"],
+                bg=COLORS["bg_primary"],
+                justify=tk.LEFT,
+                wraplength=520,
+                anchor="w"
+            )
+            desc_label.pack(fill=tk.X, pady=(5, 0), padx=(28, 0))
+            
+        # Bind mousewheel to all widgets in the scrollable frame
+        self._tutorial_bind_mousewheel(scrollable_frame)
+        
+        # Footer with "Got it" button
+        footer_frame = tk.Frame(main_container, bg=COLORS["bg_primary"])
+        footer_frame.pack(fill=tk.X, pady=(15, 0))
+        
+        got_it_btn = RoundedButton(
+            footer_frame,
+            text="Got it!",
+            command=lambda: self._close_tutorial(tutorial_window, canvas),
+            bg_color=COLORS["button_start"],
+            hover_color=COLORS["button_start_hover"],
+            fg_color=COLORS["text_white"],
+            font=self.font_button,
+            corner_radius=10,
+            width=120,
+            height=44
+        )
+        got_it_btn.pack()
+        
+        logger.debug("Tutorial popup opened")
+    
+    def _close_tutorial(self, tutorial_window: tk.Toplevel, canvas: tk.Canvas):
+        """
+        Close the tutorial popup and cleanup.
         
         Args:
-            color: Hex color for the dot (used if no emoji)
-            emoji: Optional emoji to show instead of the dot
+            tutorial_window: The tutorial window to close
+            canvas: The canvas widget (unused, kept for compatibility)
         """
-        self.status_dot.delete("all")
-        
-        if emoji:
-            # Show emoji instead of dot
-            self.status_dot.create_text(
-                7, 7,  # Center of the 14x14 canvas
-                text=emoji,
-                font=("SF Pro Display", 10),
-                anchor="center"
-            )
-        else:
-            # Draw a perfect circle
-            self.status_dot.create_oval(1, 1, 13, 13, fill=color, outline="")
+        # Clean up references
+        self._tutorial_bind_mousewheel = None
+        self._tutorial_canvas = None
+        self._tutorial_on_mousewheel = None
+        tutorial_window.destroy()
+        logger.debug("Tutorial popup closed")
     
     def _check_privacy(self):
         """Check if privacy notice has been accepted, show if not."""
@@ -3377,7 +3597,7 @@ By clicking 'I Understand', you acknowledge this data processing."""
         self.mode_frame.grid_remove()
         
         # Update UI - show both buttons (pause on top, stop below)
-        self._update_status("focused", "Booting Up...", emoji="⚡️")
+        self._update_status("booting", "Booting Up...", emoji="⚡️")
         
         # Repack buttons in correct order: pause on top, stop below with gap
         self.start_stop_btn.pack_forget()  # Remove stop button temporarily
@@ -3864,7 +4084,7 @@ By clicking 'I Understand', you acknowledge this data processing."""
     
     def _update_status(self, status: str, text: str, emoji: str = None):
         """
-        Update the status indicator and label.
+        Update the status badge with matching background color.
         
         Args:
             status: Status type (idle, focused, away, gadget, screen, paused)
@@ -3873,9 +4093,15 @@ By clicking 'I Understand', you acknowledge this data processing."""
         """
         with self.ui_lock:
             self.current_status = status
-            color = self._get_current_status_color()
-            self._draw_status_dot(color, emoji=emoji)
-            self.status_label.configure(text=text)
+            fg_color = self._get_current_status_color()
+            bg_color = self._get_status_bg_color(status)
+            # Use emoji if provided, otherwise Unicode dot
+            prefix = emoji if emoji else "●"
+            self.status_badge.configure_badge(
+                text=f"{prefix} {text}",
+                fg_color=fg_color,
+                bg_color=bg_color
+            )
     
     def _update_timer(self):
         """
@@ -4202,6 +4428,54 @@ def main():
         )
         root.destroy()
         sys.exit(1)
+    
+    # Check license before showing main app
+    from gui.payment_screen import check_and_show_payment_screen
+    from licensing.license_manager import get_license_manager
+    
+    license_manager = get_license_manager()
+    
+    if not license_manager.is_licensed() and not config.SKIP_LICENSE_CHECK:
+        # Create a temporary root window for payment screen
+        # Use same dimensions as main GUI
+        payment_root = tk.Tk()
+        payment_root.title("BrainDock - Activate License")
+        payment_root.configure(bg=COLORS["bg_primary"])
+        
+        # Set size and center the window (same as main GUI)
+        screen_width = payment_root.winfo_screenwidth()
+        screen_height = payment_root.winfo_screenheight()
+        x = (screen_width - BASE_WIDTH) // 2
+        y = (screen_height - BASE_HEIGHT) // 2
+        payment_root.geometry(f"{BASE_WIDTH}x{BASE_HEIGHT}+{x}+{y}")
+        
+        # Set minimum size like main GUI
+        payment_root.minsize(MIN_WIDTH, MIN_HEIGHT)
+        
+        # Make window pop to front
+        payment_root.lift()
+        payment_root.attributes('-topmost', True)
+        payment_root.after(100, lambda: payment_root.attributes('-topmost', False))
+        payment_root.focus_force()
+        
+        # Track if license was activated
+        license_activated = [False]  # Use list to allow modification in closure
+        
+        def on_license_activated():
+            """Callback when license is activated."""
+            license_activated[0] = True
+            payment_root.destroy()
+        
+        # Show payment screen
+        check_and_show_payment_screen(payment_root, on_license_activated)
+        
+        # Run the payment screen event loop
+        payment_root.mainloop()
+        
+        # If license wasn't activated (user closed window), exit
+        if not license_activated[0]:
+            logger.info("Payment screen closed without activation - exiting")
+            sys.exit(0)
     
     # Check for API key early
     if not config.OPENAI_API_KEY:

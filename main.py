@@ -270,8 +270,67 @@ class BrainDock:
         print(f"📱 Gadget Usage: {gadget_min:.1f} minutes")
 
 
+def check_license_cli() -> bool:
+    """
+    Check license status for CLI mode.
+    
+    Returns:
+        True if licensed (or license check skipped), False otherwise.
+    """
+    from licensing.license_manager import get_license_manager
+    
+    # Check for skip flag
+    if config.SKIP_LICENSE_CHECK:
+        logger.info("License check skipped (SKIP_LICENSE_CHECK=true)")
+        return True
+    
+    license_manager = get_license_manager()
+    
+    if license_manager.is_licensed():
+        return True
+    
+    # Not licensed - prompt for license key in CLI
+    print("\n" + "=" * 60)
+    print("🔐 License Required")
+    print("=" * 60)
+    print("\nBrainDock requires a valid license to run.")
+    print("\nOptions:")
+    print("  1. Purchase at: https://braindock.app")
+    print("  2. Enter a license key below")
+    print("\n" + "-" * 60)
+    
+    while True:
+        try:
+            key = input("\nEnter license key (or 'q' to quit): ").strip()
+            
+            if key.lower() == 'q':
+                print("\n👋 Goodbye!")
+                return False
+            
+            if not key:
+                print("Please enter a license key.")
+                continue
+            
+            # Try to activate with key
+            if license_manager.activate_with_key(key):
+                print("\n✅ License activated successfully!")
+                return True
+            else:
+                print("❌ Invalid license key. Please try again.")
+                
+        except KeyboardInterrupt:
+            print("\n\n👋 Goodbye!")
+            return False
+        except EOFError:
+            return False
+
+
 def main_cli():
     """Run the CLI version of the application."""
+    # Check license first
+    if not check_license_cli():
+        sys.exit(0)
+    
     tracker = BrainDock()
     
     # Display welcome and check requirements
@@ -336,19 +395,65 @@ Examples:
             print("   Only one instance can run at a time.")
             print("   Please close the other instance first.\n")
         else:
-            # For GUI mode, show a dialog
+            # For GUI mode, show a dialog that appears in front
             try:
                 import tkinter as tk
-                from tkinter import messagebox
+                import sys
+                
+                # Create a custom topmost dialog instead of using messagebox
                 root = tk.Tk()
-                root.withdraw()  # Hide the main window
-                messagebox.showerror(
-                    "BrainDock Already Running",
-                    f"Another instance of BrainDock is already running{pid_info}.\n\n"
-                    "Only one instance can run at a time.\n"
-                    "Please close the other instance first."
-                )
-                root.destroy()
+                root.title("BrainDock Already Running")
+                root.geometry("400x180")
+                root.resizable(False, False)
+                
+                # Force to front on all platforms
+                root.attributes('-topmost', True)
+                root.lift()
+                root.focus_force()
+                
+                # macOS-specific: bring to front
+                if sys.platform == "darwin":
+                    root.createcommand('tk::mac::ReopenApplication', root.lift)
+                    # Use Tcl to activate
+                    root.tk.call('wm', 'attributes', '.', '-topmost', '1')
+                
+                root.update_idletasks()
+                
+                # Center on screen
+                x = (root.winfo_screenwidth() - 400) // 2
+                y = (root.winfo_screenheight() - 180) // 2
+                root.geometry(f"400x180+{x}+{y}")
+                
+                # Error icon and message
+                frame = tk.Frame(root, padx=20, pady=20)
+                frame.pack(fill="both", expand=True)
+                
+                tk.Label(
+                    frame,
+                    text="⚠️",
+                    font=("Helvetica", 32)
+                ).pack(pady=(0, 10))
+                
+                tk.Label(
+                    frame,
+                    text=f"Another instance of BrainDock is already running{pid_info}.\n\n"
+                         "Only one instance can run at a time.\n"
+                         "Please close the other instance first.",
+                    justify="center",
+                    wraplength=350
+                ).pack()
+                
+                tk.Button(
+                    frame,
+                    text="OK",
+                    command=root.destroy,
+                    width=10
+                ).pack(pady=(15, 0))
+                
+                # Keep on top
+                root.after(100, lambda: root.attributes('-topmost', True))
+                root.mainloop()
+                
             except Exception:
                 # Fallback to console if tkinter fails
                 print("\n❌ BrainDock is already running" + pid_info)
