@@ -556,7 +556,7 @@ class PaymentScreen:
             highlightcolor=colors["border"],
             highlightbackground=colors["border"]
         )
-        self.key_entry.pack(side="left", padx=(0, 20))
+        self.key_entry.pack(side="left", padx=(0, 20), ipady=2)
         self.key_entry.bind("<Return>", lambda e: self._on_activate_key())
         
         # Activate button - green with black text (same as purchase button)
@@ -604,7 +604,7 @@ class PaymentScreen:
             highlightcolor=colors["border"],
             highlightbackground=colors["border"]
         )
-        self.session_entry.pack(side="left", padx=(0, 20))
+        self.session_entry.pack(side="left", padx=(0, 20), ipady=2)
         self.session_entry.bind("<Return>", lambda e: self._on_verify_payment())
         
         # Verify button - same style as Activate button
