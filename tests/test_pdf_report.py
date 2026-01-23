@@ -63,7 +63,7 @@ def _generate_random_events(total_minutes: float) -> list:
     """
     events = []
     event_types = [
-        ('present', 'Present at Desk'),
+        ('present', 'Focussed'),
         ('away', 'Away from Desk'),
         ('gadget_suspected', 'Gadget Usage')
     ]
@@ -152,16 +152,16 @@ def test_pdf_all_categories():
     Test PDF generation for each focus category to verify colored statements.
     
     Generates PDFs with focus rates in each category:
-    - Grand (90-100%)
-    - Promising (75-89%)
-    - Developing (50-74%)
-    - Needs Tuning (0-49%)
+    - Excellent (90-100%)
+    - Proficient (75-89%)
+    - Promising (50-74%)
+    - Developing (0-49%)
     """
     categories = [
-        ('grand', 0.95),          # 95% focus
-        ('promising', 0.80),      # 80% focus
-        ('developing', 0.60),     # 60% focus
-        ('needs_focus', 0.30),    # 30% focus
+        ('excellent', 0.95),      # 95% focus
+        ('proficient', 0.80),     # 80% focus
+        ('promising', 0.60),      # 60% focus
+        ('developing', 0.30),     # 30% focus
     ]
     
     with tempfile.TemporaryDirectory() as temp_dir:

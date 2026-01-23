@@ -168,29 +168,29 @@ def _format_time(minutes: float) -> str:
 
 # Focus category definitions with colors matching the gauge
 FOCUS_CATEGORIES = {
-    'grand': {
+    'excellent': {
         'min': 90,
         'max': 100,
-        'label': 'grand',
-        'color': '#2E7D32'  # Green
+        'label': 'excellent',
+        'color': '#1B5E20'  # Dark green
     },
-    'promising': {
+    'proficient': {
         'min': 75,
         'max': 89,
-        'label': 'promising',
-        'color': '#FFCA28'  # Yellow
+        'label': 'proficient',
+        'color': '#8BC34A'  # Lime
     },
-    'developing': {
+    'promising': {
         'min': 50,
         'max': 74,
-        'label': 'developing',
-        'color': '#F57C00'  # Orange
+        'label': 'promising',
+        'color': '#FFC107'  # Yellow
     },
-    'needs_focus': {
+    'developing': {
         'min': 0,
         'max': 49,
-        'label': 'needs tuning',
-        'color': '#B71C1C'  # Red
+        'label': 'developing',
+        'color': '#FF8C00'  # Orange
     }
 }
 
@@ -206,17 +206,17 @@ def _get_focus_category(focus_pct: float) -> Tuple[str, str, str]:
         Tuple of (category_key, category_label, color_hex)
     """
     if focus_pct >= 90:
-        cat = FOCUS_CATEGORIES['grand']
-        return ('grand', cat['label'], cat['color'])
+        cat = FOCUS_CATEGORIES['excellent']
+        return ('excellent', cat['label'], cat['color'])
     elif focus_pct >= 75:
+        cat = FOCUS_CATEGORIES['proficient']
+        return ('proficient', cat['label'], cat['color'])
+    elif focus_pct >= 50:
         cat = FOCUS_CATEGORIES['promising']
         return ('promising', cat['label'], cat['color'])
-    elif focus_pct >= 50:
+    else:
         cat = FOCUS_CATEGORIES['developing']
         return ('developing', cat['label'], cat['color'])
-    else:
-        cat = FOCUS_CATEGORIES['needs_focus']
-        return ('needs_focus', cat['label'], cat['color'])
 
 
 def _get_dominant_distraction_type(stats: Optional[Dict[str, Any]] = None) -> str:
@@ -285,10 +285,10 @@ def _load_focus_statements() -> Dict[str, Any]:
         logger.error(f"Error loading focus statements: {e}")
         # Return fallback statements with nested structure
         return {
-            'grand': {'general': ['Your focus rate of {percentage}% is grand - keep it up!']},
-            'promising': {'general': ['Your focus rate of {percentage}% is promising - you\'re on the right track!']},
-            'developing': {'general': ['Your focus rate of {percentage}% is developing - keep building your focus skills!']},
-            'needs_focus': {'general': ['Your focus rate of {percentage}% needs tuning - you can improve with practice!']}
+            'excellent': {'general': ['Your focus rate of {percentage}% is excellent - keep it up!']},
+            'proficient': {'general': ['Your focus rate of {percentage}% is proficient - you\'re on the right track!']},
+            'promising': {'general': ['Your focus rate of {percentage}% is promising - keep building your focus skills!']},
+            'developing': {'general': ['Your focus rate of {percentage}% is developing - you can improve with practice!']}
         }
 
 
@@ -356,42 +356,49 @@ def _create_focus_statement_paragraph(
     stats: Optional[Dict[str, Any]] = None
 ) -> Paragraph:
     """
-    Create a paragraph with the focus statement, with the category word colored.
+    Create a paragraph with the focus statement, with category word and percentage highlighted.
     
-    Selects a statement based on both focus percentage and dominant distraction type.
+    Both the category keyword (e.g., "excellent") and percentage are displayed in 
+    the category color with a larger font size for emphasis.
     
     Args:
         focus_pct: Focus percentage (0-100)
         stats: Optional statistics dictionary for determining dominant distraction
         
     Returns:
-        ReportLab Paragraph object with colored category word
+        ReportLab Paragraph object with colored and enlarged category word and percentage
     """
     statement, category_label, color = _get_random_focus_statement(focus_pct, stats)
     
-    # Replace the category word with a colored version using ReportLab markup
-    # The category label appears in the statement (e.g., "is grand", "is promising")
-    colored_label = f'<font color="{color}"><b>{category_label}</b></font>'
-    colored_label_cap = f'<font color="{color}"><b>{category_label.capitalize()}</b></font>'
+    # Format percentage string for matching
+    pct_str = f"{int(focus_pct)}" if focus_pct == int(focus_pct) else f"{focus_pct:.1f}"
     
-    # Replace the category label with the colored version
-    # Handle both mid-sentence (" promising") and start of sentence ("Promising ")
-    colored_statement = statement.replace(f' {category_label}', f' {colored_label}')
-    colored_statement = colored_statement.replace(f'{category_label.capitalize()} ', f'{colored_label_cap} ')
+    # Highlighted style: colored, bold, same font size as text, always capitalized
+    capitalized_label = category_label.capitalize()
     
-    # Handle "needs tuning" special case (two words) - replace on already processed statement
-    if category_label == 'needs tuning':
-        colored_statement = colored_statement.replace('needs tuning', colored_label)
-        colored_statement = colored_statement.replace('Needs tuning', colored_label_cap)
+    # Create highlighted version of category label (always capitalized, colored, bold)
+    colored_label_cap = f'<font color="{color}"><b>{capitalized_label}</b></font>'
     
-    # Create paragraph style for the statement
+    # Create highlighted percentage (with % symbol, colored, bold)
+    colored_pct = f'<font color="{color}"><b>{pct_str}%</b></font>'
+    
+    # Replace the category label with the capitalized colored version
+    # Handle both lowercase mid-sentence and already capitalized versions
+    colored_statement = statement.replace(f' {category_label}', f' {colored_label_cap}')
+    colored_statement = colored_statement.replace(f'{capitalized_label} ', f'{colored_label_cap} ')
+    
+    # Replace the percentage with the colored version
+    colored_statement = colored_statement.replace(f'{pct_str}%', colored_pct)
+    
+    # Create paragraph style for the statement with increased word spacing
     statement_style = ParagraphStyle(
         'FocusStatement',
         fontName='Times-Italic',
-        fontSize=11,
+        fontSize=14,
         textColor=colors.HexColor('#2C3E50'),
         alignment=TA_CENTER,
-        leading=14
+        leading=18,   # Comfortable line height
+        wordSpace=3   # Increased spacing between words
     )
     
     return Paragraph(colored_statement, statement_style)
@@ -551,10 +558,10 @@ def _draw_focus_gauge(focus_pct: float) -> Drawing:
     Create a semicircular gauge visualization for focus percentage.
     
     The gauge has 4 colored zones (no labels - legend is separate):
-    - 0-49%: Needs Tuning (red)
-    - 50-75%: Developing (orange)
-    - 75-90%: Promising (yellow)
-    - 90-100%: Grand (green)
+    - 0-49%: Developing (orange)
+    - 50-74%: Promising (yellow)
+    - 75-89%: Proficient (lime)
+    - 90-100%: Excellent (dark green)
     
     The drawing's bottom edge aligns with the semicircle's flat base.
     
@@ -579,10 +586,10 @@ def _draw_focus_gauge(focus_pct: float) -> Drawing:
     
     # Zone definitions: (start_pct, end_pct, color)
     zones = [
-        (0, 49, colors.HexColor('#B71C1C')),      # Deep red
-        (49, 75, colors.HexColor('#F57C00')),     # Orange
-        (75, 90, colors.HexColor('#FFCA28')),     # Yellow
-        (90, 100, colors.HexColor('#2E7D32')),    # Green
+        (0, 49, colors.HexColor('#FF8C00')),      # Orange
+        (49, 75, colors.HexColor('#FFC107')),     # Yellow
+        (75, 90, colors.HexColor('#8BC34A')),     # Lime
+        (90, 100, colors.HexColor('#1B5E20')),    # Dark green
     ]
     
     # Draw each zone as a wedge (arc segment)
@@ -662,10 +669,10 @@ def _create_focus_legend_table() -> Table:
     """
     # Zone definitions: (range_text, label, color)
     zones = [
-        ('90-100%', 'Grand', colors.HexColor('#2E7D32')),
-        ('75-89%', 'Promising', colors.HexColor('#FFCA28')),
-        ('50-74%', 'Developing', colors.HexColor('#F57C00')),
-        ('0-49%', 'Needs Tuning', colors.HexColor('#B71C1C')),
+        ('90-100%', 'Excellent', colors.HexColor('#1B5E20')),
+        ('75-89%', 'Proficient', colors.HexColor('#8BC34A')),
+        ('50-74%', 'Promising', colors.HexColor('#FFC107')),
+        ('0-49%', 'Developing', colors.HexColor('#FF8C00')),
     ]
     
     # Build legend table data
@@ -702,10 +709,10 @@ def _create_focus_legend_table() -> Table:
     
     # Add color coding for percentage column
     zone_colors = [
-        colors.HexColor('#2E7D32'),  # Grand - green
-        colors.HexColor('#FFCA28'),  # Promising - yellow
-        colors.HexColor('#F57C00'),  # Developing - orange
-        colors.HexColor('#B71C1C'),  # Needs Tuning - red
+        colors.HexColor('#1B5E20'),  # Excellent - dark green
+        colors.HexColor('#8BC34A'),  # Proficient - lime
+        colors.HexColor('#FFC107'),  # Promising - yellow
+        colors.HexColor('#FF8C00'),  # Developing - orange
     ]
     for i, color in enumerate(zone_colors):
         legend_style.append(('TEXTCOLOR', (1, i), (1, i), color))
@@ -866,29 +873,24 @@ def _create_focus_card(
     # Create the individual components
     gauge_with_legend = _create_gauge_with_legend(focus_pct)
     focus_statement = _create_focus_statement_paragraph(focus_pct, stats)
-    focus_emoji = _create_focus_emoji_image(focus_pct)
     
-    # Build content list
+    # Build content list (gauge, spacer, centered statement)
     content = [
         gauge_with_legend,
-        Spacer(1, 0.2 * inch),
+        Spacer(1, 0.35 * inch),  # More space to push statement down for better centering
         focus_statement,
     ]
     
-    # Add emoji if available
-    if focus_emoji:
-        content.append(focus_emoji)
-    
-    # Create the rounded box container
+    # Create the rounded box container (slightly wider and taller)
     card = RoundedBoxFlowable(
         content=content,
-        width=6.2 * inch,
+        width=6.5 * inch,
         bg_color='#F4F8FB',      # Light blue-gray background
         border_color='#A8C0D4',  # More visible border (darker blue-gray)
         border_width=3,          # Noticeable border thickness
         corner_radius=15,
-        padding=20,
-        padding_bottom=8         # Reduced bottom padding for tighter fit with emoji
+        padding=25,              # Increased padding for larger card
+        padding_bottom=30        # More bottom padding for vertical centering
     )
     
     return card
@@ -1049,7 +1051,7 @@ def generate_report(
     
     # Add rows only if they have at least 1 second (already truncated to int)
     if present_secs > 0:
-        stats_data.append(['Present at Desk', _format_time_seconds(present_secs)])
+        stats_data.append(['Focussed', _format_time_seconds(present_secs)])
         row_types.append('present')
     
     if away_secs > 0:

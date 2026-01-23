@@ -1167,7 +1167,7 @@ class BrainDockGUI:
         )
         
         self.font_status = tkfont.Font(
-            family=font_family, size=16, weight="normal"
+            family=font_family, size=20, weight="normal"
         )
         
         self.font_button = tkfont.Font(
@@ -2974,7 +2974,7 @@ class BrainDockGUI:
                 COLORS["button_start"],
                 "Start a Session",
                 "Click the green 'Start Session' button to begin your focus session. "
-                "BrainDock will always help you stay on task."
+                "BrainDock will always help you stay on track."
             ),
             (
                 "\u25CF",  # Filled circle (status dot)
@@ -2990,7 +2990,7 @@ class BrainDockGUI:
                 "\u23F1",  # Stopwatch
                 COLORS["accent_primary"],
                 "See Your Time",
-                "The timer displays your session duration. See how long you've been "
+                "The timer displays your session duration. See how long you have been "
                 "focused and aim to improve your quality focus time each session."
             ),
             (
@@ -2998,16 +2998,16 @@ class BrainDockGUI:
                 COLORS["text_secondary"],
                 "Choose Your Mode",
                 "Select how BrainDock helps you focus:\n"
-                "\u2022 Camera \u2014 Uses AI to detect distractions\n"
-                "\u2022 Screen \u2014 Checks for distracting apps/websites\n"
+                "\u2022 Camera \u2014 Uses your Device Camera and AI to detect distractions\n"
+                "\u2022 Screen \u2014 Checks current open window for distracting apps/websites\n"
                 "\u2022 Both \u2014 Combined detection"
             ),
             (
                 "\u23F8",  # Pause symbol
                 COLORS["button_pause"],
                 "Pause Anytime",
-                "Click 'Pause Session' if you need to step away. Your session stays active "
-                "and you can resume whenever you're ready."
+                "Click 'Pause Session' if you need to step away. Your timer and session is paused "
+                "and you can resume whenever you are ready."
             ),
             (
                 "\u2193",  # Down arrow (download)

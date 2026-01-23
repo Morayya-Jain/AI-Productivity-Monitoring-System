@@ -458,7 +458,7 @@ class PaymentScreen:
         # Purchase section header
         purchase_header = tk.Label(
             card_frame,
-            text="Activate Your License",
+            text="Activate Session",
             font=heading_font,
             fg=colors["text_primary"],
             bg=colors["bg_card"]
@@ -482,7 +482,7 @@ class PaymentScreen:
         # Purchase button - green with black text
         purchase_btn = tk.Button(
             card_frame,
-            text="Purchase with Card",
+            text="Pay Via Card",
             font=button_font,
             bg=colors["button_start"],
             fg="#1F2937",
