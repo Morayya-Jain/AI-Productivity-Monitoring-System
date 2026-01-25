@@ -432,6 +432,7 @@ class PaymentScreen:
             width=260, 
             height=60, 
             bg_color=COLORS["button_bg"], 
+            hover_color=COLORS["button_bg_hover"],
             text_color="#FFFFFF", 
             font_type="body_bold",
             command=self._on_purchase_click
@@ -479,6 +480,7 @@ class PaymentScreen:
             height=44, 
             radius=12,
             bg_color=COLORS["button_bg"], 
+            hover_color=COLORS["button_bg_hover"],
             font_type="caption",
             command=self._on_activate_key
         )
@@ -502,6 +504,7 @@ class PaymentScreen:
             height=44, 
             radius=12,
             bg_color=COLORS["button_bg"], 
+            hover_color=COLORS["button_bg_hover"],
             font_type="caption",
             command=self._on_verify_payment
         )

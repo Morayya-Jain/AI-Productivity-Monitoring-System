@@ -8,6 +8,7 @@ COLORS = {
     "text_secondary": "#8E8E93", # System Gray
     "accent": "#2C3E50",       # Dark Blue/Grey
     "button_bg": "#1C1C1E",    # Black for primary actions
+    "button_bg_hover": "#333333", # Dark grey for hover
     "button_text": "#FFFFFF",
     "border": "#E5E5EA",
     "shadow_light": "#E5E5EA", 
@@ -32,14 +33,16 @@ FONTS = {
 }
 
 class RoundedButton(tk.Canvas):
-    def __init__(self, parent, text, command=None, width=200, height=50, radius=25, bg_color=COLORS["button_bg"], text_color=COLORS["button_text"], font_type="body_bold"):
+    def __init__(self, parent, text, command=None, width=200, height=50, radius=25, bg_color=COLORS["button_bg"], hover_color=None, text_color=COLORS["button_text"], font_type="body_bold"):
         super().__init__(parent, width=width, height=height, bg=COLORS["bg"], highlightthickness=0)
         self.command = command
         self.radius = radius
         self.bg_color = bg_color
+        self.hover_color = hover_color or bg_color
         self.text_color = text_color
         self.text_str = text
         self.font_type = font_type
+        self._original_bg = bg_color
         
         self.bind("<Button-1>", self._on_click)
         self.bind("<Enter>", self._on_enter)
@@ -51,6 +54,10 @@ class RoundedButton(tk.Canvas):
         self.delete("all")
         w = int(self["width"])
         h = int(self["height"])
+        
+        # Try to use actual size if available
+        if self.winfo_width() > 1: w = self.winfo_width()
+        if self.winfo_height() > 1: h = self.winfo_height()
 
         x1, y1 = 2, 2 + offset
         x2, y2 = w - 2, h - 2 + offset
@@ -68,6 +75,20 @@ class RoundedButton(tk.Canvas):
         # Text
         self.create_text(w//2, h//2 + offset, text=self.text_str, fill=self.text_color, font=FONTS[self.font_type])
 
+    def configure(self, **kwargs):
+        if "text" in kwargs:
+            self.text_str = kwargs.pop("text")
+        if "bg_color" in kwargs:
+            self.bg_color = kwargs.pop("bg_color")
+            self._original_bg = self.bg_color
+        if "hover_color" in kwargs:
+            self.hover_color = kwargs.pop("hover_color")
+        if "text_color" in kwargs:
+            self.text_color = kwargs.pop("text_color")
+            
+        super().configure(**kwargs)
+        self.draw()
+
     def create_rounded_rect(self, x1, y1, x2, y2, r, **kwargs):
         points = [x1+r, y1, x2-r, y1, x2, y1, x2, y1+r, x2, y2-r, x2, y2, x2-r, y2, x1+r, y2, x1, y2, x1, y2-r, x1, y1+r, x1, y1]
         return self.create_polygon(points, smooth=True, **kwargs)
@@ -79,10 +100,12 @@ class RoundedButton(tk.Canvas):
         self.after(100, lambda: self.draw(offset=0))
 
     def _on_enter(self, event):
-        pass  # Keep natural cursor
+        self.bg_color = self.hover_color
+        self.draw()
 
     def _on_leave(self, event):
-        pass  # Keep natural cursor
+        self.bg_color = self._original_bg
+        self.draw()
 
 class Card(tk.Canvas):
     def __init__(self, parent, width=300, height=150, radius=20, bg_color=COLORS["surface"]):

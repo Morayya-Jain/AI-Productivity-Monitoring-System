@@ -308,9 +308,12 @@ class RoundedButton(tk.Canvas):
     def _on_click(self, event):
         """Handle click when enabled."""
         if self._enabled and self.command:
+            self.draw(offset=2)  # Show pressed state before command
+            self.update_idletasks()
             self.command()
-            self.draw(offset=2)
-            self.after(100, lambda: self.draw(offset=0))
+            # Only redraw if widget still exists (command may have destroyed it)
+            if self.winfo_exists():
+                self.after(100, lambda: self.draw(offset=0) if self.winfo_exists() else None)
 
     def _on_enter(self, event):
         """Apply hover color."""
@@ -1298,7 +1301,7 @@ class BrainDockGUI:
         timer_frame = tk.Frame(self.controls_container, bg=COLORS["bg_primary"])
         timer_frame.pack(pady=(0, 10))
 
-        self.timer_label = tk.Label(timer_frame, text="00:00:00", font=self.font_timer, bg=COLORS["bg_primary"], fg=COLORS["text_primary"])
+        self.timer_label = tk.Label(timer_frame, text="00:00:00", font=self.font_timer, bg=COLORS["bg_primary"], fg=COLORS["text_primary"], width=10)
         self.timer_label.pack()
         
         self.timer_sub_label = tk.Label(
@@ -3214,11 +3217,11 @@ class BrainDockGUI:
                 "\u2022 Purple = Screen distraction detected"
             ),
             (
-                "\u23F1",  # Stopwatch
-                COLORS["accent_primary"],
-                "See Your Time",
-                "The timer displays your session duration. See how long you have been "
-                "focused and aim to improve your quality focus time each session."
+                "\U0001F4A1",  # Lightbulb emoji
+                COLORS["accent_warm"],
+                "Best Results",
+                "For best results, we recommend only one person stays in the camera frame "
+                "during your session. Multiple people may cause inaccurate tracking."
             ),
             (
                 "\u2699",  # Gear/settings
@@ -3228,6 +3231,13 @@ class BrainDockGUI:
                 "\u2022 Camera \u2014 Uses your Device Camera and AI to detect distractions\n"
                 "\u2022 Screen \u2014 Checks current open window for distracting apps/websites\n"
                 "\u2022 Both \u2014 Combined detection"
+            ),
+            (
+                "\u23F1",  # Stopwatch
+                COLORS["accent_primary"],
+                "See Your Time",
+                "The timer displays your session duration. See how long you have been "
+                "focused and aim to improve your quality focus time each session."
             ),
             (
                 "\u23F8",  # Pause symbol
@@ -3254,16 +3264,21 @@ class BrainDockGUI:
             header_frame = tk.Frame(section_frame, bg=COLORS["bg_primary"])
             header_frame.pack(fill=tk.X, anchor="w")
             
+            # Fixed-width container for icon to ensure consistent alignment
+            icon_container = tk.Frame(header_frame, bg=COLORS["bg_primary"], width=32, height=28)
+            icon_container.pack(side=tk.LEFT, padx=(0, 8))
+            icon_container.pack_propagate(False)  # Prevent container from shrinking
+            
             # Icon label - use system font with fallback
             icon_font = get_system_font(size=20, weight="normal")
             icon_label = tk.Label(
-                header_frame,
+                icon_container,
                 text=icon,
                 font=icon_font,
                 fg=icon_color,
                 bg=COLORS["bg_primary"]
             )
-            icon_label.pack(side=tk.LEFT, padx=(0, 12))
+            icon_label.place(relx=0.5, rely=0.5, anchor="center")  # Center icon in container
             
             # Section title
             title_label = tk.Label(
@@ -3319,7 +3334,7 @@ class BrainDockGUI:
                 num_lines += lines_in_paragraph
             
             desc_text.configure(height=num_lines, state="disabled")
-            desc_text.pack(fill=tk.X, pady=(8, 0), padx=(32, 0))
+            desc_text.pack(fill=tk.X, pady=(8, 0), padx=(43, 0))  # Slightly indented from title
             
             # Bind mousewheel to the text widget
             desc_text.bind("<MouseWheel>", _on_mousewheel)

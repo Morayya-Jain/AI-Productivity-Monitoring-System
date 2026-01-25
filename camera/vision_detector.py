@@ -18,20 +18,22 @@ logger = logging.getLogger(__name__)
 class VisionDetector:
     """
     Uses OpenAI Vision API (GPT-4o/GPT-4o-mini with vision) to detect:
-    - Person presence
-    - Active gadget usage (phones, tablets, iPads, game controllers, Nintendo Switch, TV, etc.)
-    - Other distractions
+    - Person presence (any body part visible)
+    - Desk proximity (distance-based, not face-dependent)
+    - Active gadget usage (phones, tablets, game controllers, Nintendo Switch, TV, etc.)
     
     Note: Smartwatches/Apple Watches are explicitly EXCLUDED from detection
     as they are not considered distractions (used for time/notifications).
     
-    Much more accurate than hardcoded rules!
+    Desk Proximity Detection:
+    - Based on how LARGE body parts appear in frame (distance estimation)
+    - Face orientation does NOT matter - looking down, sideways, or out of frame is OK
+    - If body is close to camera = at_desk, regardless of face visibility
     
-    Important: Gadget detection only triggers when BOTH conditions are met:
-    1. Person's attention/gaze is directed AT the gadget
-    2. Gadget screen/display is ON or device is actively being used
-    
-    Position (on desk vs. in hands) doesn't matter - it's about attention and engagement.
+    Gadget Detection Rules (position-based):
+    - Device IN HANDS: Always a distraction (screen state irrelevant)
+    - Device ON TABLE: Only distraction if screen lit AND user looking at it
+    - Device face-down or screen off on table: NOT a distraction
     """
     
     def __init__(self, api_key: Optional[str] = None, vision_model: str = "gpt-4o-mini"):
@@ -96,27 +98,55 @@ class VisionDetector:
 RESPONSE FORMAT (no other text):
 {"person_present": true/false, "at_desk": true/false, "gadget_visible": true/false, "gadget_confidence": 0.0-1.0, "distraction_type": "phone"/"tablet"/"controller"/"tv"/"none"}
 
-DESK PROXIMITY (at_desk):
-TRUE: Face/upper body clearly visible, at typical webcam working distance
-FALSE: Person small/distant, roaming in background, far from desk
+PRESENCE DETECTION (person_present):
+- TRUE: Any human body part visible (face, torso, arms, hands, etc.)
+- FALSE: No human visible at all (empty room, only furniture)
 
-GADGET DETECTION - ONLY detect if BOTH conditions met:
-1. Device screen ON or actively being used
-2. Person's eyes/attention directed AT the gadget
+DESK PROXIMITY (at_desk) - DISTANCE-BASED, NOT FACE-DEPENDENT:
+- TRUE: Body parts appear in frame at reasonable working distance
+  Person sitting at desk, even if leaning back slightly, looking down, or face out of frame
+  Be LENIENT - if person is clearly at their desk area, mark as at_desk=true
+- FALSE: Person appears VERY small/distant (clearly in background, far across room)
+  Only mark FALSE if person is obviously far away (tiny silhouette, walking in far background)
 
-Gadgets: phones, tablets, game controllers, Nintendo Switch, Steam Deck, TV
+Face orientation does NOT matter - looking down, sideways, or face out of frame is OK.
+When in doubt, mark at_desk=true if person seems to be in their desk area.
 
-DO NOT detect if:
-- Person looking elsewhere (not at device)
-- Device screen OFF/face-down
-- Person focused on work (computer, book)
-- Controller just sitting on desk
-- Smartwatch/Apple Watch (NOT a distraction - used for time/notifications)
+GADGET DETECTION - VERY STRICT to minimize false positives:
+
+MANDATORY REQUIREMENT FOR PHONES/TABLETS:
+The screen MUST be visibly LIT/GLOWING to count as in use!
+A dark/black/off screen = NOT in use, even if held in hands.
+
+DETECT AS GADGET (gadget_visible=true) ONLY WHEN:
+1. Phone/tablet: Screen is VISIBLY LIT (glowing, showing content) AND held in hands
+2. Game controller: Actively being gripped in gaming position
+3. Phone on table: Screen VISIBLY LIT AND user clearly staring at it
+
+DO NOT DETECT (gadget_visible=false) - BE STRICT:
+- Phone with dark/black/off screen (even if in hands)
+- Phone screen facing away from camera (can't confirm it's on)
+- Person looking down with no visible lit screen
+- Hands near phone on table (near ≠ using)
+- Phone lying flat on table (regardless of screen state)
+- Any rectangular object that MIGHT be a phone but unclear
+- Device face-down
+- Smartwatch/Apple Watch (never a distraction)
+- Person working on computer/laptop
+- ANY uncertainty - when in doubt, do NOT detect
+
+KEY: You must see a GLOWING/LIT screen to confirm phone/tablet usage.
+Dark screens, unclear objects, or uncertain situations = gadget_visible=false
+
+CONFIDENCE:
+- Lit screen clearly visible in hands → confidence >= 0.7
+- Lit screen on table, user staring at it → confidence >= 0.6
+- Screen not clearly lit or any doubt → confidence below 0.3
 
 RULES:
-- person_present=true if any body part visible (even far away)
-- If unsure about gadget usage, set confidence below 0.5
-- If person_present=false, set at_desk=false"""
+- If person_present=false, then at_desk=false
+- Default to gadget_visible=false unless you are CERTAIN
+- False negatives are acceptable, false positives are NOT"""
     
     def analyze_frame(self, frame: np.ndarray, use_cache: bool = True) -> Dict[str, any]:
         """
@@ -129,23 +159,22 @@ RULES:
         Returns:
             Dictionary with detection results:
             {
-                "person_present": bool,
-                "at_desk": bool (person is at working distance from camera),
-                "gadget_visible": bool (attention + device active, position irrelevant),
+                "person_present": bool (any body part visible),
+                "at_desk": bool (body parts appear large/close in frame),
+                "gadget_visible": bool (device in hands OR on table being looked at),
                 "gadget_confidence": float (0-1),
                 "distraction_type": str (phone, tablet, controller, tv, or none)
             }
         
         Note:
-            at_desk is True when person is at typical working distance (face/upper body
-            clearly visible). False when person is far away/roaming in background.
+            at_desk uses DISTANCE-BASED detection - if body parts appear large in frame,
+            person is at desk. Face orientation does NOT matter (looking down, sideways,
+            or face out of frame is still "at desk" if body is close).
             
-            gadget_visible only returns True when BOTH conditions are met:
-            1. Person's attention/gaze is directed AT the gadget
-            2. Gadget is actively being used (screen ON or engaged with device)
-            
-            Position doesn't matter - gadget can be on desk or in hands.
-            What matters is attention + active engagement.
+            gadget_visible uses POSITION-BASED rules:
+            - Device IN HANDS: Always True (screen state irrelevant)
+            - Device ON TABLE: Only True if screen lit AND user looking at it
+            - Device face-down or screen off on table: Always False
         """
         # Check cache
         current_time = time.time()
@@ -268,28 +297,30 @@ RULES:
     
     def detect_gadget_usage(self, frame: np.ndarray) -> bool:
         """
-        Detect if a gadget is being ACTIVELY USED (not just visible).
+        Detect if a gadget is being used based on position-based rules.
         
         Gadgets include: phones, tablets, game controllers, Nintendo Switch, TV, etc.
         
-        Active usage requires BOTH:
-        1. Person's attention/gaze directed AT the gadget
-        2. Gadget is active (screen ON or device being used)
+        Position-based detection rules:
+        - Device IN HANDS: Always counts as usage (screen state irrelevant)
+        - Device ON TABLE: Only counts if screen lit AND user looking at it
         
-        Position irrelevant - gadget can be:
-        - On desk (if person looking at it and it's active)
-        - In hands (if person engaged with it)
+        Will count as usage:
+        - Phone/tablet held in hands (any screen state)
+        - Game controller in hands
+        - Phone on table with screen on AND user looking at it
         
         Will NOT count as usage:
-        - Gadget on desk but person looking at computer/elsewhere
-        - Gadget screen OFF or put away
-        - Gadget visible but not being actively engaged with
+        - Phone on table with screen off
+        - Phone on table with screen on but user NOT looking at it
+        - Device face-down on table
+        - Smartwatch/Apple Watch (never a distraction)
         
         Args:
             frame: BGR image from camera
             
         Returns:
-            True if gadget is being actively used with high confidence, False otherwise
+            True if gadget is being used with high confidence, False otherwise
         """
         result = self.analyze_frame(frame)
         
@@ -305,9 +336,9 @@ RULES:
             
         Returns:
             Dictionary with detection results including:
-            - present: Person is visible in frame
-            - at_desk: Person is at working distance (not roaming far away)
-            - gadget_suspected: Person is actively using a gadget (phone, tablet, controller, etc.)
+            - present: Any body part visible in frame
+            - at_desk: Body parts appear large/close (distance-based, face-independent)
+            - gadget_suspected: Device in hands OR on table being looked at
             - distraction_type: Type of distraction detected (phone, tablet, controller, tv, none)
         """
         result = self.analyze_frame(frame)
