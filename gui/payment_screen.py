@@ -735,7 +735,8 @@ class PaymentScreen:
             email=email
         )
         
-        self._update_status("License activated! Starting app...", is_success=True)
+        # Include "session id" in message to route to input field
+        self._update_status("Session ID verified! Starting app...", is_success=True)
         logger.info("License activated via automatic payment detection")
         
         # Delay slightly to show success message, then enter app
@@ -859,7 +860,8 @@ class PaymentScreen:
                 email=email
             )
             
-            self._update_status("License activated! Starting app...", is_success=True)
+            # Include "session id" in message to route to input field
+            self._update_status("Session ID verified! Starting app...", is_success=True)
             
             # Delay slightly to show success message
             self.root.after(1000, self._activation_success)
@@ -878,7 +880,8 @@ class PaymentScreen:
         
         # Validate and activate
         if self.license_manager.activate_with_key(key):
-            self._update_status("License activated! Starting app...", is_success=True)
+            # Include "license key" in message to route to input field
+            self._update_status("License key activated! Starting app...", is_success=True)
             self.root.after(1000, self._activation_success)
         else:
             self._update_status("Invalid license key", is_error=True)

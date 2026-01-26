@@ -13,7 +13,7 @@
 #   3. The workflow will build both platforms and create a release
 #
 # The release will contain:
-#   - BrainDock-macOS.zip (macOS .app bundle)
+#   - BrainDock-macOS.dmg (macOS installer - drag to Applications)
 #   - BrainDock-Windows.zip (Windows .exe)
 
 name: Build and Release
@@ -64,16 +64,41 @@ jobs:
         run: |
           pyinstaller build/braindock.spec --noconfirm
       
-      - name: Create ZIP archive
+      - name: Get version for DMG
+        id: version
         run: |
-          cd dist
-          zip -r BrainDock-macOS.zip BrainDock.app
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/}"
+          fi
+          # Remove 'v' prefix if present for filename
+          VERSION_NUM="${VERSION#v}"
+          echo "VERSION_NUM=$VERSION_NUM" >> $GITHUB_OUTPUT
+      
+      - name: Create DMG installer
+        run: |
+          # Create staging folder with app and Applications symlink
+          mkdir -p dist/dmg-staging
+          cp -R dist/BrainDock.app dist/dmg-staging/
+          ln -s /Applications dist/dmg-staging/Applications
+          
+          # Create DMG
+          hdiutil create \
+            -volname "BrainDock" \
+            -srcfolder dist/dmg-staging \
+            -ov \
+            -format UDZO \
+            dist/BrainDock-macOS.dmg
+          
+          # Clean up
+          rm -rf dist/dmg-staging
       
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
         with:
           name: BrainDock-macOS
-          path: dist/BrainDock-macOS.zip
+          path: dist/BrainDock-macOS.dmg
           if-no-files-found: error
 
   # Build Windows app
@@ -165,16 +190,16 @@ jobs:
             
             | Platform | Download |
             |----------|----------|
-            | macOS | [BrainDock-macOS.zip](https://github.com/${{ github.repository }}/releases/download/${{ steps.get_version.outputs.VERSION }}/BrainDock-macOS.zip) |
+            | macOS | [BrainDock-macOS.dmg](https://github.com/${{ github.repository }}/releases/download/${{ steps.get_version.outputs.VERSION }}/BrainDock-macOS.dmg) |
             | Windows | [BrainDock-Windows.zip](https://github.com/${{ github.repository }}/releases/download/${{ steps.get_version.outputs.VERSION }}/BrainDock-Windows.zip) |
             
             ### First-Time Launch Instructions
             
             **macOS:**
-            1. Extract the ZIP file
-            2. Move BrainDock.app to your Applications folder
-            3. Right-click the app and select "Open"
-            4. Click "Open" in the dialog to bypass the security warning (only needed once)
+            1. Download and double-click the DMG file
+            2. Drag BrainDock to the Applications folder
+            3. Eject the DMG
+            4. Open BrainDock from Applications (right-click → Open the first time)
             
             **Windows:**
             1. Extract the ZIP file
@@ -187,7 +212,7 @@ jobs:
           draft: false
           prerelease: ${{ contains(steps.get_version.outputs.VERSION, '-') }}
           files: |
-            ./release/BrainDock-macOS.zip
+            ./release/BrainDock-macOS.dmg
             ./release/BrainDock-Windows.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

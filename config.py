@@ -75,7 +75,10 @@ def get_user_data_dir() -> Path:
 
 # Load environment variables from .env file (only in development)
 if not is_bundled():
-    load_dotenv()
+    # Explicitly load from the project root (where config.py lives)
+    # This ensures .env is found regardless of current working directory
+    _env_path = Path(__file__).parent / ".env"
+    load_dotenv(_env_path)
 
 # Base directory (for bundled resources like assets, data files)
 BASE_DIR = get_base_dir()

@@ -3845,14 +3845,26 @@ By clicking 'I Understand', you acknowledge this data processing."""
         
         # Verify API key exists (only required for camera modes)
         needs_camera = self.monitoring_mode in (config.MODE_CAMERA_ONLY, config.MODE_BOTH)
-        if needs_camera and not config.OPENAI_API_KEY:
-            messagebox.showerror(
-                "API Key Required",
-                "OpenAI API key not found!\n\n"
-                "Please set OPENAI_API_KEY in your .env file.\n"
-                "Get your key from: https://platform.openai.com/api-keys"
-            )
-            return
+        if needs_camera:
+            # Check for the correct API key based on vision provider
+            if config.VISION_PROVIDER == "gemini":
+                if not config.GEMINI_API_KEY:
+                    messagebox.showerror(
+                        "API Key Required",
+                        "Gemini API key not found!\n\n"
+                        "Please set GEMINI_API_KEY in your .env file.\n"
+                        "Get your key from: https://aistudio.google.com/apikey"
+                    )
+                    return
+            else:
+                if not config.OPENAI_API_KEY:
+                    messagebox.showerror(
+                        "API Key Required",
+                        "OpenAI API key not found!\n\n"
+                        "Please set OPENAI_API_KEY in your .env file.\n"
+                        "Get your key from: https://platform.openai.com/api-keys"
+                    )
+                    return
         
         # Initialize session (but don't start yet - wait for first detection)
         self.session = Session()
@@ -4810,9 +4822,13 @@ def main():
             logger.info("Payment screen closed without activation - exiting")
             sys.exit(0)
     
-    # Check for API key early
-    if not config.OPENAI_API_KEY:
-        logger.warning("OpenAI API key not found - user will be prompted")
+    # Check for API key early (based on configured vision provider)
+    if config.VISION_PROVIDER == "gemini":
+        if not config.GEMINI_API_KEY:
+            logger.warning("Gemini API key not found - user will be prompted")
+    else:
+        if not config.OPENAI_API_KEY:
+            logger.warning("OpenAI API key not found - user will be prompted")
     
     # Create and run GUI
     app = BrainDockGUI()

@@ -137,27 +137,71 @@ pyinstaller "$SCRIPT_DIR/braindock.spec" \
 if [[ -d "$PROJECT_ROOT/dist/BrainDock.app" ]]; then
     echo ""
     echo -e "${GREEN}=================================================${NC}"
-    echo -e "${GREEN}        Build Successful!${NC}"
+    echo -e "${GREEN}        App Bundle Created!${NC}"
     echo -e "${GREEN}=================================================${NC}"
     echo ""
     echo -e "App bundle: ${BLUE}$PROJECT_ROOT/dist/BrainDock.app${NC}"
-    echo ""
     
     # Show app size
     APP_SIZE=$(du -sh "$PROJECT_ROOT/dist/BrainDock.app" | cut -f1)
     echo -e "App size: ${YELLOW}$APP_SIZE${NC}"
     echo ""
     
-    # Instructions
-    echo -e "${YELLOW}To test the app:${NC}"
-    echo "  open dist/BrainDock.app"
-    echo ""
-    echo -e "${YELLOW}To distribute:${NC}"
-    echo "  1. Compress: zip -r BrainDock-macOS.zip dist/BrainDock.app"
-    echo "  2. Upload to GitHub Releases"
-    echo ""
-    echo -e "${YELLOW}Note:${NC} Users will need to right-click > Open on first launch"
-    echo "      to bypass the 'unidentified developer' warning."
+    # Create DMG
+    echo -e "${YELLOW}Creating DMG installer...${NC}"
+    
+    # Version for filename
+    VERSION="1.0.0"
+    DMG_NAME="BrainDock-${VERSION}-macOS.dmg"
+    DMG_PATH="$PROJECT_ROOT/dist/$DMG_NAME"
+    
+    # Clean up any existing DMG or staging folder
+    rm -f "$DMG_PATH"
+    rm -rf "$PROJECT_ROOT/dist/dmg-staging"
+    
+    # Create staging folder with app and Applications symlink
+    mkdir -p "$PROJECT_ROOT/dist/dmg-staging"
+    cp -R "$PROJECT_ROOT/dist/BrainDock.app" "$PROJECT_ROOT/dist/dmg-staging/"
+    ln -s /Applications "$PROJECT_ROOT/dist/dmg-staging/Applications"
+    
+    # Create the DMG using hdiutil
+    hdiutil create \
+        -volname "BrainDock" \
+        -srcfolder "$PROJECT_ROOT/dist/dmg-staging" \
+        -ov \
+        -format UDZO \
+        "$DMG_PATH"
+    
+    # Clean up staging folder
+    rm -rf "$PROJECT_ROOT/dist/dmg-staging"
+    
+    # Check if DMG was created
+    if [[ -f "$DMG_PATH" ]]; then
+        DMG_SIZE=$(du -sh "$DMG_PATH" | cut -f1)
+        echo ""
+        echo -e "${GREEN}=================================================${NC}"
+        echo -e "${GREEN}        Build Successful!${NC}"
+        echo -e "${GREEN}=================================================${NC}"
+        echo ""
+        echo -e "DMG installer: ${BLUE}$DMG_PATH${NC}"
+        echo -e "DMG size: ${YELLOW}$DMG_SIZE${NC}"
+        echo ""
+        echo -e "${YELLOW}To test:${NC}"
+        echo "  open \"$DMG_PATH\""
+        echo ""
+        echo -e "${YELLOW}To distribute:${NC}"
+        echo "  Upload $DMG_NAME to GitHub Releases"
+        echo ""
+        echo -e "${YELLOW}User experience:${NC}"
+        echo "  1. User downloads $DMG_NAME"
+        echo "  2. Double-clicks to mount"
+        echo "  3. Drags BrainDock to Applications folder"
+        echo "  4. Ejects the DMG"
+        echo "  5. Launches from Applications (right-click > Open first time)"
+    else
+        echo -e "${RED}Error: Failed to create DMG${NC}"
+        exit 1
+    fi
     
 else
     echo ""
