@@ -33,8 +33,15 @@ FONTS = {
 }
 
 class RoundedButton(tk.Canvas):
-    def __init__(self, parent, text, command=None, width=200, height=50, radius=25, bg_color=COLORS["button_bg"], hover_color=None, text_color=COLORS["button_text"], font_type="body_bold"):
-        super().__init__(parent, width=width, height=height, bg=COLORS["bg"], highlightthickness=0)
+    def __init__(self, parent, text, command=None, width=200, height=50, radius=25, bg_color=COLORS["button_bg"], hover_color=None, text_color=COLORS["button_text"], font_type="body_bold", canvas_bg=None):
+        # Use parent's background color if not specified, fallback to surface color
+        if canvas_bg is None:
+            try:
+                canvas_bg = parent.cget("bg")
+            except (tk.TclError, AttributeError):
+                canvas_bg = COLORS["surface"]
+        
+        super().__init__(parent, width=width, height=height, bg=canvas_bg, highlightthickness=0)
         self.command = command
         self.radius = radius
         self.bg_color = bg_color
@@ -43,6 +50,7 @@ class RoundedButton(tk.Canvas):
         self.text_str = text
         self.font_type = font_type
         self._original_bg = bg_color
+        self._canvas_bg = canvas_bg
         
         self.bind("<Button-1>", self._on_click)
         self.bind("<Enter>", self._on_enter)

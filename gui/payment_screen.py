@@ -566,9 +566,14 @@ class PaymentScreen:
                 self.session_entry.show_info(message)
             return
 
-        # Other messages - don't display in global status area
-        # (input-specific messages are handled above, global status messages are suppressed)
-        return
+        # Display general messages in the global status label
+        if self.status_label:
+            if is_error:
+                self.status_label.config(text=message, fg=COLORS["status_gadget"])
+            elif is_success:
+                self.status_label.config(text=message, fg=COLORS["success"])
+            else:
+                self.status_label.config(text=message, fg=COLORS["text_secondary"])
     
     def _start_payment_polling(self, session_id: str):
         """
@@ -737,44 +742,53 @@ class PaymentScreen:
     
     def _on_purchase_click(self):
         """Handle purchase button click."""
-        if not self.stripe.is_available():
-            self._update_status("Payment system not configured", is_error=True)
-            messagebox.showerror(
-                "Payment Not Available",
-                "The payment system is not configured.\n\n"
-                "Please contact support or use a license key."
-            )
-            return
-        
-        self._update_status("Opening payment page...")
-        
-        # Start local server for redirect handling
-        self._local_server = LocalPaymentServer(callback=self._on_redirect_received)
-        server_started = self._local_server.start()
-        
-        # Get URLs for Stripe (use local server if started, otherwise fallback)
-        if server_started:
-            success_url = self._local_server.get_success_url()
-            cancel_url = self._local_server.get_cancel_url()
-            logger.info(f"Using local redirect server on port {self._local_server.port}")
-        else:
-            # Fallback to generic URLs if server failed
-            success_url = None
-            cancel_url = None
-            logger.warning("Local server failed to start, using default URLs")
-        
-        # Open Stripe checkout in background thread
-        def open_checkout():
-            session_id, error = self.stripe.open_checkout(
-                success_url=success_url,
-                cancel_url=cancel_url
-            )
+        try:
+            if not self.stripe.is_available():
+                self._update_status("Payment system not configured", is_error=True)
+                messagebox.showerror(
+                    "Payment Not Available",
+                    "The payment system is not configured.\n\n"
+                    "Please contact support or use a license key."
+                )
+                return
             
-            # Update UI from main thread
-            self.root.after(0, lambda: self._handle_checkout_result(session_id, error))
-        
-        thread = threading.Thread(target=open_checkout, daemon=True)
-        thread.start()
+            self._update_status("Opening payment page...")
+            
+            # Start local server for redirect handling
+            self._local_server = LocalPaymentServer(callback=self._on_redirect_received)
+            server_started = self._local_server.start()
+            
+            # Get URLs for Stripe (use local server if started, otherwise fallback)
+            if server_started:
+                success_url = self._local_server.get_success_url()
+                cancel_url = self._local_server.get_cancel_url()
+                logger.info(f"Using local redirect server on port {self._local_server.port}")
+            else:
+                # Fallback to generic URLs if server failed
+                success_url = None
+                cancel_url = None
+                logger.warning("Local server failed to start, using default URLs")
+            
+            # Open Stripe checkout in background thread
+            def open_checkout():
+                try:
+                    session_id, error = self.stripe.open_checkout(
+                        success_url=success_url,
+                        cancel_url=cancel_url
+                    )
+                    
+                    # Update UI from main thread
+                    self.root.after(0, lambda: self._handle_checkout_result(session_id, error))
+                except Exception as e:
+                    logger.error(f"Error in open_checkout thread: {e}")
+                    self.root.after(0, lambda: self._handle_checkout_result(None, str(e)))
+            
+            thread = threading.Thread(target=open_checkout, daemon=True)
+            thread.start()
+            
+        except Exception as e:
+            logger.error(f"Error in _on_purchase_click: {e}")
+            self._update_status(f"Error: {e}", is_error=True)
     
     def _handle_checkout_result(self, session_id: Optional[str], error: Optional[str]):
         """
