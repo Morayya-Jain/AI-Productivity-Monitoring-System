@@ -44,12 +44,8 @@ datas = [
     (str(PROJECT_ROOT / 'legal'), 'legal'),
 ]
 
-# Add SSL certificates from certifi for HTTPS requests in bundled app
-try:
-    import certifi
-    datas.append((certifi.where(), 'certifi'))
-except ImportError:
-    print("Warning: certifi not installed, SSL certificates may not work in bundle")
+# Note: SSL certificates are handled automatically by PyInstaller's certifi hook
+# (hook-certifi.py from pyinstaller-hooks-contrib)
 
 # Hidden imports - modules that PyInstaller might miss
 hiddenimports = [

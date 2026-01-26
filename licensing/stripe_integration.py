@@ -21,32 +21,25 @@ def _fix_ssl_certificates():
     """
     Fix SSL certificate paths for PyInstaller bundles.
     
-    PyInstaller bundles may not find the SSL certificates properly.
-    This sets the SSL_CERT_FILE environment variable to help.
+    PyInstaller's certifi hook should handle this automatically, but we set
+    environment variables as a backup for libraries that don't use certifi directly.
     Works on both macOS and Windows.
     """
     cert_path = None
     
-    # First, check if we're in a PyInstaller bundle and look for bundled certs
-    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-        # Running in a PyInstaller bundle
-        bundle_dir = sys._MEIPASS
-        bundled_cert = os.path.join(bundle_dir, 'certifi', 'cacert.pem')
-        if os.path.exists(bundled_cert):
-            cert_path = bundled_cert
-            logger.debug(f"Using bundled SSL certificates: {cert_path}")
-    
-    # If not found in bundle, try certifi module
-    if not cert_path:
-        try:
-            import certifi
-            cert_path = certifi.where()
-            if os.path.exists(cert_path):
-                logger.debug(f"Using certifi SSL certificates: {cert_path}")
-            else:
-                cert_path = None
-        except ImportError:
-            pass
+    # Try certifi module first - PyInstaller's hook patches this to work in bundles
+    try:
+        import certifi
+        cert_path = certifi.where()
+        if os.path.exists(cert_path):
+            logger.debug(f"Using certifi SSL certificates: {cert_path}")
+        else:
+            logger.warning(f"certifi.where() returned non-existent path: {cert_path}")
+            cert_path = None
+    except ImportError:
+        logger.debug("certifi not available")
+    except Exception as e:
+        logger.warning(f"Error getting certifi path: {e}")
     
     # Platform-specific fallback locations
     if not cert_path:
@@ -54,6 +47,7 @@ def _fix_ssl_certificates():
             # macOS certificate locations
             macos_certs = [
                 '/etc/ssl/cert.pem',
+                '/private/etc/ssl/cert.pem',
                 '/usr/local/etc/openssl/cert.pem',
                 '/usr/local/etc/openssl@1.1/cert.pem',
                 '/opt/homebrew/etc/openssl/cert.pem',
@@ -66,42 +60,15 @@ def _fix_ssl_certificates():
                     break
         
         elif sys.platform == "win32":
-            # Windows certificate locations
-            # Try common locations where certificates might be found
-            import ssl
+            # Windows - try ssl module's default paths
             try:
-                # Try to get the default certificate path from ssl module
+                import ssl
                 default_paths = ssl.get_default_verify_paths()
                 if default_paths.cafile and os.path.exists(default_paths.cafile):
                     cert_path = default_paths.cafile
                     logger.debug(f"Using Windows SSL default certificates: {cert_path}")
             except Exception:
                 pass
-            
-            if not cert_path:
-                # Try common Windows locations
-                windows_certs = []
-                
-                # Python installation directory
-                python_dir = os.path.dirname(sys.executable)
-                windows_certs.extend([
-                    os.path.join(python_dir, 'Lib', 'site-packages', 'certifi', 'cacert.pem'),
-                    os.path.join(python_dir, 'certifi', 'cacert.pem'),
-                ])
-                
-                # AppData locations
-                appdata = os.environ.get('APPDATA', '')
-                localappdata = os.environ.get('LOCALAPPDATA', '')
-                if appdata:
-                    windows_certs.append(os.path.join(appdata, 'Python', 'cacert.pem'))
-                if localappdata:
-                    windows_certs.append(os.path.join(localappdata, 'Programs', 'Python', 'cacert.pem'))
-                
-                for path in windows_certs:
-                    if os.path.exists(path):
-                        cert_path = path
-                        logger.debug(f"Using Windows SSL certificates: {cert_path}")
-                        break
     
     if cert_path:
         os.environ['SSL_CERT_FILE'] = cert_path
@@ -109,11 +76,8 @@ def _fix_ssl_certificates():
         os.environ['CURL_CA_BUNDLE'] = cert_path
         logger.info(f"SSL certificates configured: {cert_path}")
     else:
-        # On Windows, the system certificate store is often used automatically
-        if sys.platform == "win32":
-            logger.debug("No explicit SSL cert path found - Windows will use system certificate store")
-        else:
-            logger.warning("Could not find SSL certificates - HTTPS requests may fail")
+        # Log warning but don't fail - some systems use built-in certificate stores
+        logger.warning("Could not find SSL certificates - relying on system defaults")
 
 # Apply SSL fix before importing stripe
 _fix_ssl_certificates()
@@ -241,11 +205,19 @@ class StripeIntegration:
             logger.debug(f"Stripe error traceback: {traceback.format_exc()}")
             return None, f"Payment service error: {error_msg}"
         except FileNotFoundError as e:
-            # This can happen if SSL certificates are not found
-            error_msg = f"File not found: {e}"
+            # This can happen if SSL certificates are not found or other file issues
+            filename = getattr(e, 'filename', None) or 'unknown'
+            error_msg = f"File not found: {filename} - {e}"
             logger.error(f"FileNotFoundError in checkout session: {error_msg}")
             logger.error(f"Full traceback: {traceback.format_exc()}")
-            return None, "Payment service configuration error. Please try again."
+            # Show actual error for debugging
+            return None, f"Missing file: {filename}"
+        except OSError as e:
+            # Catch other OS errors (permissions, etc.)
+            error_msg = f"OS error: {e}"
+            logger.error(f"OSError in checkout session: {error_msg}")
+            logger.error(f"Full traceback: {traceback.format_exc()}")
+            return None, f"System error: {e}"
         except Exception as e:
             error_msg = str(e)
             logger.error(f"Error creating checkout session: {error_msg}")
