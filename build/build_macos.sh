@@ -143,22 +143,6 @@ else
     exit 1
 fi
 
-# Also generate runtime hook for backwards compatibility
-echo ""
-echo -e "${YELLOW}Generating runtime hook...${NC}"
-
-RUNTIME_HOOK="$SCRIPT_DIR/runtime_hook.py"
-RUNTIME_HOOK_TEMPLATE="$SCRIPT_DIR/runtime_hook_template.py"
-
-if [[ -f "$RUNTIME_HOOK_TEMPLATE" ]]; then
-    cp "$RUNTIME_HOOK_TEMPLATE" "$RUNTIME_HOOK"
-    sed -i '' "s|%%OPENAI_API_KEY%%|${OPENAI_API_KEY:-}|g" "$RUNTIME_HOOK"
-    sed -i '' "s|%%GEMINI_API_KEY%%|${GEMINI_API_KEY}|g" "$RUNTIME_HOOK"
-    sed -i '' "s|%%STRIPE_SECRET_KEY%%|${STRIPE_SECRET_KEY:-}|g" "$RUNTIME_HOOK"
-    sed -i '' "s|%%STRIPE_PUBLISHABLE_KEY%%|${STRIPE_PUBLISHABLE_KEY:-}|g" "$RUNTIME_HOOK"
-    sed -i '' "s|%%STRIPE_PRICE_ID%%|${STRIPE_PRICE_ID:-}|g" "$RUNTIME_HOOK"
-    echo -e "${GREEN}Runtime hook generated.${NC}"
-fi
 
 # Clean previous builds
 echo ""
@@ -166,8 +150,7 @@ echo -e "${YELLOW}Cleaning previous builds...${NC}"
 rm -rf "$PROJECT_ROOT/dist/BrainDock"
 rm -rf "$PROJECT_ROOT/dist/BrainDock.app"
 rm -rf "$PROJECT_ROOT/build/BrainDock"
-# Clean previously generated key files (will be regenerated with fresh keys)
-rm -f "$SCRIPT_DIR/runtime_hook.py"
+# Clean previously generated bundled_keys.py (will be regenerated with fresh keys)
 rm -f "$PROJECT_ROOT/bundled_keys.py"
 echo -e "${GREEN}Cleaned.${NC}"
 
