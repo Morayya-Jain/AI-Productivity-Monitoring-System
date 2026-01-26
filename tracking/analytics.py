@@ -178,29 +178,38 @@ def get_focus_percentage(stats: Dict[str, Any]) -> float:
         stats: Statistics dictionary from compute_statistics
         
     Returns:
-        Focus percentage (0-100), never exceeds 100%
+        Focus percentage (0-100), never exceeds 100%. Returns 0.0 for invalid/empty stats.
     """
-    # Use float seconds from stats
-    if "active_seconds" in stats:
-        active_time = float(stats["active_seconds"])
-        present_time = float(stats["present_seconds"])
-    else:
-        # Legacy fallback (includes screen_distraction if present)
-        screen_distraction = stats.get("screen_distraction_minutes", 0)
-        active_time = (stats.get("present_minutes", 0) + 
-                       stats.get("away_minutes", 0) + 
-                       stats.get("gadget_minutes", 0) +
-                       screen_distraction) * 60.0
-        present_time = stats.get("present_minutes", 0) * 60.0
-    
-    if active_time <= 0:
+    # Handle None or empty stats
+    if not stats:
         return 0.0
     
-    # Focus rate = present / active (guaranteed 0-100%)
-    focus_pct = (present_time / active_time) * 100.0
-    
-    # Clamp to 0-100 for safety
-    return min(100.0, max(0.0, focus_pct))
+    try:
+        # Use float seconds from stats
+        if "active_seconds" in stats:
+            active_time = float(stats.get("active_seconds", 0) or 0)
+            present_time = float(stats.get("present_seconds", 0) or 0)
+        else:
+            # Legacy fallback (includes screen_distraction if present)
+            screen_distraction = float(stats.get("screen_distraction_minutes", 0) or 0)
+            active_time = (float(stats.get("present_minutes", 0) or 0) + 
+                           float(stats.get("away_minutes", 0) or 0) + 
+                           float(stats.get("gadget_minutes", 0) or 0) +
+                           screen_distraction) * 60.0
+            present_time = float(stats.get("present_minutes", 0) or 0) * 60.0
+        
+        # Guard against division by zero or negative values
+        if active_time <= 0:
+            return 0.0
+        
+        # Focus rate = present / active (guaranteed 0-100%)
+        focus_pct = (present_time / active_time) * 100.0
+        
+        # Clamp to 0-100 for safety (handles any floating point edge cases)
+        return min(100.0, max(0.0, focus_pct))
+    except (TypeError, ValueError) as e:
+        # If any conversion fails, return safe default
+        return 0.0
 
 
 def generate_summary_text(stats: Dict[str, Any]) -> str:

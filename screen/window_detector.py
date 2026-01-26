@@ -58,8 +58,18 @@ class WindowDetector:
             else:
                 logger.warning(f"Unsupported platform: {self.platform}")
                 return None
+        except PermissionError as e:
+            logger.warning(f"Permission denied getting active window: {e}")
+            self._has_permission = False
+            return None
+        except subprocess.TimeoutExpired as e:
+            logger.warning(f"Timeout getting active window: {e}")
+            return None
+        except OSError as e:
+            logger.error(f"OS error getting active window: {e}")
+            return None
         except Exception as e:
-            logger.error(f"Error getting active window: {e}")
+            logger.error(f"Unexpected error getting active window: {e}")
             return None
     
     def _get_active_window_macos(self) -> Optional[WindowInfo]:
@@ -528,33 +538,39 @@ def _capture_screenshot() -> Optional[str]:
             # macOS: Use screencapture command
             import subprocess
             import tempfile
-            
-            with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
-                temp_path = f.name
-            
-            # Capture screen to temp file (lower quality for cost)
-            subprocess.run(
-                ["screencapture", "-x", "-t", "jpg", "-C", temp_path],
-                capture_output=True,
-                timeout=5
-            )
-            
-            with open(temp_path, "rb") as f:
-                image_data = f.read()
-            
-            # Clean up
             import os
-            os.unlink(temp_path)
             
-            # Resize for cost efficiency
-            from PIL import Image
-            img = Image.open(BytesIO(image_data))
-            img.thumbnail((800, 600), Image.Resampling.LANCZOS)
-            
-            buffer = BytesIO()
-            img.save(buffer, format="JPEG", quality=70)
-            
-            return base64.b64encode(buffer.getvalue()).decode("utf-8")
+            temp_path = None
+            try:
+                with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
+                    temp_path = f.name
+                
+                # Capture screen to temp file (lower quality for cost)
+                subprocess.run(
+                    ["screencapture", "-x", "-t", "jpg", "-C", temp_path],
+                    capture_output=True,
+                    timeout=5
+                )
+                
+                with open(temp_path, "rb") as f:
+                    image_data = f.read()
+                
+                # Resize for cost efficiency
+                from PIL import Image
+                img = Image.open(BytesIO(image_data))
+                img.thumbnail((800, 600), Image.Resampling.LANCZOS)
+                
+                buffer = BytesIO()
+                img.save(buffer, format="JPEG", quality=70)
+                
+                return base64.b64encode(buffer.getvalue()).decode("utf-8")
+            finally:
+                # Always clean up temp file, even on errors
+                if temp_path and os.path.exists(temp_path):
+                    try:
+                        os.unlink(temp_path)
+                    except Exception as cleanup_error:
+                        logger.warning(f"Failed to clean up temp file: {cleanup_error}")
             
         elif sys.platform == "win32":
             # Windows: Use PIL ImageGrab

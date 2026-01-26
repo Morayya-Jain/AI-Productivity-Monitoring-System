@@ -3980,11 +3980,14 @@ By clicking 'I Understand', you acknowledge this data processing."""
         self.should_stop.set()
         self.is_running = False
         
-        # Wait for detection thread(s) to finish
+        # Wait for detection thread(s) to finish and clean up references
         if self.detection_thread and self.detection_thread.is_alive():
             self.detection_thread.join(timeout=2.0)
+        self.detection_thread = None  # Clean up reference for garbage collection
+        
         if self.screen_detection_thread and self.screen_detection_thread.is_alive():
             self.screen_detection_thread.join(timeout=2.0)
+        self.screen_detection_thread = None  # Clean up reference for garbage collection
         
         # Show mode selector again
         self._show_mode_selector()
@@ -4287,6 +4290,15 @@ By clicking 'I Understand', you acknowledge this data processing."""
             
             self.should_stop.set()
             self.is_running = False
+            
+            # Wait for detection thread(s) to finish and clean up references
+            if self.detection_thread and self.detection_thread.is_alive():
+                self.detection_thread.join(timeout=2.0)
+            self.detection_thread = None  # Clean up reference for garbage collection
+            
+            if self.screen_detection_thread and self.screen_detection_thread.is_alive():
+                self.screen_detection_thread.join(timeout=2.0)
+            self.screen_detection_thread = None  # Clean up reference for garbage collection
             
             # End session with captured stop time
             if self.session and self.session_started and self.session_start_time:
@@ -4769,8 +4781,15 @@ By clicking 'I Understand', you acknowledge this data processing."""
             # Stop session
             self.should_stop.set()
             self.is_running = False
+            
+            # Wait for detection thread(s) to finish and clean up references
             if self.detection_thread and self.detection_thread.is_alive():
                 self.detection_thread.join(timeout=2.0)
+            self.detection_thread = None  # Clean up reference for garbage collection
+            
+            if self.screen_detection_thread and self.screen_detection_thread.is_alive():
+                self.screen_detection_thread.join(timeout=2.0)
+            self.screen_detection_thread = None  # Clean up reference for garbage collection
             
             # End session and record usage with correct active duration
             if self.session and self.session_started and self.session_start_time:

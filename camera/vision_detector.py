@@ -213,7 +213,8 @@ RULES:
                     }
                 ],
                 max_tokens=100,  # Minimal buffer - actual response is ~60 tokens
-                temperature=0.3  # Lower temp for more consistent detection
+                temperature=0.3,  # Lower temp for more consistent detection
+                timeout=30.0  # Prevent indefinite hangs on network issues
             )
             
             # Extract response content

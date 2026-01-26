@@ -108,13 +108,49 @@ except ImportError:
     _BUNDLED_GEMINI_KEY = os.getenv("BUNDLED_GEMINI_API_KEY", "")
 
 
-def _get_api_key(env_var: str, bundled_key: str) -> str:
+def _validate_api_key_format(key: str, key_type: str) -> bool:
+    """
+    Validate API key format to catch configuration errors early.
+    
+    Args:
+        key: The API key to validate.
+        key_type: Type of key ("openai", "gemini", "stripe_secret", "stripe_publishable")
+        
+    Returns:
+        True if key format is valid, False otherwise.
+    """
+    if not key:
+        return False
+    
+    # Check minimum length
+    if len(key) < 10:
+        return False
+    
+    # Check expected prefixes for known key types
+    expected_prefixes = {
+        "openai": "sk-",
+        "gemini": "AI",  # Gemini keys typically start with AI
+        "stripe_secret": ("sk_live_", "sk_test_", "rk_live_", "rk_test_"),
+        "stripe_publishable": ("pk_live_", "pk_test_"),
+    }
+    
+    if key_type in expected_prefixes:
+        prefix = expected_prefixes[key_type]
+        if isinstance(prefix, tuple):
+            return any(key.startswith(p) for p in prefix)
+        return key.startswith(prefix)
+    
+    return True  # Unknown key type - accept any format
+
+
+def _get_api_key(env_var: str, bundled_key: str, key_type: str = "") -> str:
     """
     Get API key with fallback to bundled key.
     
     Args:
         env_var: Environment variable name to check first.
         bundled_key: Bundled key to use as fallback.
+        key_type: Optional key type for format validation logging.
         
     Returns:
         API key string, or empty string if not found.
@@ -122,17 +158,23 @@ def _get_api_key(env_var: str, bundled_key: str) -> str:
     # Try environment variable first (allows user override)
     key = os.getenv(env_var, "")
     if key:
+        # Log warning if format looks wrong (doesn't prevent usage)
+        if key_type and not _validate_api_key_format(key, key_type):
+            import logging
+            logging.getLogger(__name__).warning(
+                f"{env_var} may have invalid format for {key_type} key"
+            )
         return key
     # Fall back to bundled key
     return bundled_key
 
 
 # OpenAI Configuration
-OPENAI_API_KEY = _get_api_key("OPENAI_API_KEY", _BUNDLED_OPENAI_KEY)
+OPENAI_API_KEY = _get_api_key("OPENAI_API_KEY", _BUNDLED_OPENAI_KEY, "openai")
 OPENAI_VISION_MODEL = "gpt-4o-mini"  # For image analysis (person/gadget detection)
 
 # Gemini Configuration
-GEMINI_API_KEY = _get_api_key("GEMINI_API_KEY", _BUNDLED_GEMINI_KEY)
+GEMINI_API_KEY = _get_api_key("GEMINI_API_KEY", _BUNDLED_GEMINI_KEY, "gemini")
 GEMINI_VISION_MODEL = "gemini-2.0-flash"  # Cheaper alternative to OpenAI
 
 # Camera Configuration
@@ -155,8 +197,21 @@ DETECTION_FPS = 0.33  # Frames per second to analyse
 # Paths
 # Session data goes to user data directory (persists across updates)
 DATA_DIR = USER_DATA_DIR / "sessions"
-# Save reports directly to user's Downloads folder
-REPORTS_DIR = Path.home() / "Downloads"
+
+# Save reports to user's Downloads folder (with fallback)
+def _get_reports_dir() -> Path:
+    """Get the reports directory with fallback if Downloads doesn't exist."""
+    downloads = Path.home() / "Downloads"
+    if downloads.exists() and downloads.is_dir():
+        return downloads
+    # Fallback to Documents or home directory
+    documents = Path.home() / "Documents"
+    if documents.exists() and documents.is_dir():
+        return documents
+    # Last resort: user data directory
+    return USER_DATA_DIR / "reports"
+
+REPORTS_DIR = _get_reports_dir()
 
 # Bundled data directory (read-only resources included in the app)
 BUNDLED_DATA_DIR = BASE_DIR / "data"
@@ -227,9 +282,9 @@ except ImportError:
     _BUNDLED_STRIPE_PUBLISHABLE = os.getenv("BUNDLED_STRIPE_PUBLISHABLE_KEY", "")
     _BUNDLED_STRIPE_PRICE_ID = os.getenv("BUNDLED_STRIPE_PRICE_ID", "")
 
-STRIPE_SECRET_KEY = _get_api_key("STRIPE_SECRET_KEY", _BUNDLED_STRIPE_SECRET)
-STRIPE_PUBLISHABLE_KEY = _get_api_key("STRIPE_PUBLISHABLE_KEY", _BUNDLED_STRIPE_PUBLISHABLE)
-STRIPE_PRICE_ID = _get_api_key("STRIPE_PRICE_ID", _BUNDLED_STRIPE_PRICE_ID)
+STRIPE_SECRET_KEY = _get_api_key("STRIPE_SECRET_KEY", _BUNDLED_STRIPE_SECRET, "stripe_secret")
+STRIPE_PUBLISHABLE_KEY = _get_api_key("STRIPE_PUBLISHABLE_KEY", _BUNDLED_STRIPE_PUBLISHABLE, "stripe_publishable")
+STRIPE_PRICE_ID = _get_api_key("STRIPE_PRICE_ID", _BUNDLED_STRIPE_PRICE_ID)  # No validation for price ID
 PRODUCT_PRICE_DISPLAY = os.getenv("PRODUCT_PRICE_DISPLAY", "One-time payment")  # Display text
 # Require Terms of Service acceptance at checkout (must configure T&C URL in Stripe Dashboard first)
 STRIPE_REQUIRE_TERMS = os.getenv("STRIPE_REQUIRE_TERMS", "").lower() in ("true", "1", "yes")

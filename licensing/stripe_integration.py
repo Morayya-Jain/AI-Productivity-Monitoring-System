@@ -18,11 +18,16 @@ logger = logging.getLogger(__name__)
 # Global variable to store the resolved certificate path
 _CERT_PATH = None
 
-# Debug log path for instrumentation - use Desktop for visibility from packaged app
-_DEBUG_LOG_PATH = os.path.expanduser("~/Desktop/braindock_debug.log")
+# Debug logging is disabled in production builds
+# Set BRAINDOCK_DEBUG=1 environment variable to enable debug logging
+_DEBUG_ENABLED = os.environ.get("BRAINDOCK_DEBUG", "").lower() in ("1", "true", "yes")
+_DEBUG_LOG_PATH = os.path.expanduser("~/Desktop/braindock_debug.log") if _DEBUG_ENABLED else None
 
 def _debug_log(hypothesis_id: str, location: str, message: str, data: dict):
-    """Write debug log entry to file."""
+    """Write debug log entry to file (only if debug mode enabled)."""
+    if not _DEBUG_ENABLED or not _DEBUG_LOG_PATH:
+        return  # Debug logging disabled in production
+    
     # #region agent log
     import json
     import time
@@ -417,6 +422,17 @@ class StripeIntegration:
         """
         if not self._initialized:
             return False, {"error": "Stripe not configured"}
+        
+        # Validate session ID format before making API call
+        if not session_id or not isinstance(session_id, str):
+            return False, {"error": "Invalid session ID: must be a non-empty string"}
+        
+        session_id = session_id.strip()
+        if not session_id.startswith("cs_"):
+            return False, {"error": "Invalid session ID format: must start with 'cs_'"}
+        
+        if len(session_id) < 20:
+            return False, {"error": "Invalid session ID: too short"}
         
         try:
             # Retrieve the session

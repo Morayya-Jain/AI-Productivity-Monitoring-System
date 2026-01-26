@@ -270,7 +270,7 @@ class LocalPaymentServer:
             return False
     
     def stop(self):
-        """Stop the local HTTP server."""
+        """Stop the local HTTP server and wait for thread to finish."""
         self._running = False
         
         if self.server:
@@ -280,6 +280,9 @@ class LocalPaymentServer:
                 logger.warning(f"Error closing server: {e}")
             self.server = None
         
+        # Wait for server thread to finish (with timeout to avoid deadlock)
+        if self._server_thread is not None and self._server_thread.is_alive():
+            self._server_thread.join(timeout=2.0)
         self._server_thread = None
         logger.debug("Local payment server stopped")
     
@@ -317,7 +320,8 @@ class PaymentScreen:
         # Local server for handling Stripe redirect
         self._local_server: Optional[LocalPaymentServer] = None
         
-        # Polling state
+        # Polling state (protected by _polling_lock for thread safety)
+        self._polling_lock = threading.Lock()
         self._polling_active = False
         self._polling_thread: Optional[threading.Thread] = None
         self._payment_detected = False  # Prevent duplicate activations
@@ -585,23 +589,30 @@ class PaymentScreen:
         Args:
             session_id: The Stripe session ID to poll for.
         """
-        if self._polling_active:
-            return  # Already polling
-        
-        self._polling_active = True
-        self._payment_detected = False
+        with self._polling_lock:
+            if self._polling_active:
+                return  # Already polling
+            
+            self._polling_active = True
+            self._payment_detected = False
         
         def poll_loop():
             """Background polling loop."""
             start_time = time.time()
             
-            while self._polling_active and not self._payment_ready:
+            while True:
+                # Thread-safe check of polling state
+                with self._polling_lock:
+                    if not self._polling_active or self._payment_ready:
+                        break
+                
                 elapsed = time.time() - start_time
                 
                 # Check timeout
                 if elapsed >= self._poll_timeout:
                     logger.warning("Payment polling timed out after 10 minutes")
-                    self._polling_active = False
+                    with self._polling_lock:
+                        self._polling_active = False
                     # Update UI from main thread
                     self.root.after(0, lambda: self._update_status(
                         "Payment check timed out. Click 'Already paid? Verify manually' if you paid.",
@@ -615,11 +626,12 @@ class PaymentScreen:
                     
                     if is_paid:
                         logger.info("Payment detected via polling - waiting for user to return to app")
-                        self._polling_active = False
-                        # Store payment info for when user returns to app
-                        self._payment_ready = True
-                        self._payment_session_id = session_id
-                        self._payment_info = info
+                        with self._polling_lock:
+                            self._polling_active = False
+                            # Store payment info for when user returns to app
+                            self._payment_ready = True
+                            self._payment_session_id = session_id
+                            self._payment_info = info
                         # Update status to let user know they can return
                         self.root.after(0, lambda: self._update_status(
                             "Payment successful! Return to the app to continue.",
@@ -630,10 +642,11 @@ class PaymentScreen:
                 except Exception as e:
                     logger.warning(f"Polling error (will retry): {e}")
                 
-                # Wait before next poll
+                # Wait before next poll (check stop flag periodically)
                 for _ in range(int(self._poll_interval * 10)):
-                    if not self._polling_active:
-                        break
+                    with self._polling_lock:
+                        if not self._polling_active:
+                            break
                     time.sleep(0.1)
             
             logger.debug("Payment polling stopped")
@@ -643,8 +656,13 @@ class PaymentScreen:
         logger.info(f"Started payment polling for session {session_id[:20]}...")
     
     def _stop_payment_polling(self):
-        """Stop the background payment polling."""
-        self._polling_active = False
+        """Stop the background payment polling and wait for thread to finish."""
+        with self._polling_lock:
+            self._polling_active = False
+        
+        # Wait for polling thread to finish (with timeout to avoid deadlock)
+        if self._polling_thread is not None and self._polling_thread.is_alive():
+            self._polling_thread.join(timeout=2.0)
         self._polling_thread = None
         logger.debug("Payment polling stopped")
     
@@ -657,8 +675,9 @@ class PaymentScreen:
         Args:
             session_id: The session ID from the redirect.
         """
-        if self._payment_detected or self._payment_ready:
-            return  # Already handled
+        with self._polling_lock:
+            if self._payment_detected or self._payment_ready:
+                return  # Already handled
         
         logger.info(f"Redirect received for session {session_id[:20]}...")
         
@@ -666,9 +685,10 @@ class PaymentScreen:
         def verify_payment():
             is_paid, info = self.stripe.verify_session(session_id)
             if is_paid:
-                self._payment_ready = True
-                self._payment_session_id = session_id
-                self._payment_info = info
+                with self._polling_lock:
+                    self._payment_ready = True
+                    self._payment_session_id = session_id
+                    self._payment_info = info
                 logger.info("Payment verified via redirect - waiting for user to return to app")
                 self.root.after(0, lambda: self._update_status(
                     "Payment successful! Return to the app to continue.",
@@ -694,13 +714,19 @@ class PaymentScreen:
         if event.widget != self.root:
             return
         
-        # Check if payment is ready and waiting for activation
-        if self._payment_ready and self._payment_session_id and self._payment_info:
-            logger.info("User returned to app - activating license")
-            # Reset the ready flag to prevent multiple activations
-            self._payment_ready = False
-            # Trigger activation
-            self._on_payment_detected(self._payment_session_id, self._payment_info)
+        # Check if payment is ready and waiting for activation (thread-safe)
+        with self._polling_lock:
+            if self._payment_ready and self._payment_session_id and self._payment_info:
+                logger.info("User returned to app - activating license")
+                # Reset the ready flag to prevent multiple activations
+                self._payment_ready = False
+                session_id = self._payment_session_id
+                payment_info = self._payment_info
+            else:
+                return  # No payment ready
+        
+        # Trigger activation (outside lock to avoid holding it too long)
+        self._on_payment_detected(session_id, payment_info)
     
     def _on_payment_detected(self, session_id: str, info: dict):
         """
@@ -712,10 +738,10 @@ class PaymentScreen:
             session_id: The session ID that was paid.
             info: Payment information from Stripe.
         """
-        if self._payment_detected:
-            return  # Prevent duplicate activations
-        
-        self._payment_detected = True
+        with self._polling_lock:
+            if self._payment_detected:
+                return  # Prevent duplicate activations
+            self._payment_detected = True
         
         # Stop polling and local server
         self._stop_payment_polling()
