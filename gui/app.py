@@ -41,6 +41,75 @@ from screen.blocklist import Blocklist, BlocklistManager, PRESET_CATEGORIES
 
 logger = logging.getLogger(__name__)
 
+
+# --- macOS Camera Permission Check ---
+def check_macos_camera_permission() -> str:
+    """
+    Check macOS camera authorization status.
+
+    Returns:
+        One of: "authorized", "denied", "not_determined", "restricted", "unknown"
+    """
+    if sys.platform != "darwin":
+        return "authorized"  # Non-macOS: assume authorized, let normal flow handle
+
+    try:
+        import objc
+
+        # Load AVFoundation framework using objc
+        objc.loadBundle(
+            'AVFoundation',
+            bundle_path='/System/Library/Frameworks/AVFoundation.framework',
+            module_globals=globals()
+        )
+
+        # Get AVCaptureDevice class from the loaded framework
+        AVCaptureDevice = objc.lookUpClass('AVCaptureDevice')
+
+        # AVMediaTypeVideo constant (FourCC code for video)
+        AVMediaTypeVideo = "vide"
+
+        # Authorization status values:
+        # 0 = AVAuthorizationStatusNotDetermined
+        # 1 = AVAuthorizationStatusRestricted
+        # 2 = AVAuthorizationStatusDenied
+        # 3 = AVAuthorizationStatusAuthorized
+        status = AVCaptureDevice.authorizationStatusForMediaType_(AVMediaTypeVideo)
+
+        status_map = {
+            0: "not_determined",
+            1: "restricted",
+            2: "denied",
+            3: "authorized"
+        }
+        return status_map.get(status, "unknown")
+
+    except ImportError:
+        logger.debug("PyObjC not available, cannot check camera permission status")
+        return "unknown"
+    except Exception as e:
+        logger.debug(f"Error checking camera permission: {e}")
+        return "unknown"
+
+
+def open_macos_camera_settings():
+    """Open macOS System Settings to Privacy & Security > Camera."""
+    if sys.platform == "darwin":
+        try:
+            # macOS Ventura and later use this URL scheme
+            subprocess.run(
+                ["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera"],
+                check=True
+            )
+        except Exception as e:
+            logger.error(f"Failed to open System Settings: {e}")
+            # Fallback: open System Settings main page
+            try:
+                subprocess.run(["open", "-a", "System Settings"], check=True)
+            except Exception:
+                subprocess.run(["open", "-a", "System Preferences"], check=True)
+
+
 # --- Theme System ---
 # Supports light/dark themes (dark mode prepared for future)
 THEMES = {
@@ -380,8 +449,10 @@ class Card(tk.Canvas):
         r = self.radius
         
         # Draw background with tag "card_bg"
-        self.create_rounded_rect(4, 8, w - 4, h - 4, r, fill=COLORS.get("shadow_lighter", "#F2F2F7"), outline="", tags="card_bg")
-        self.create_rounded_rect(2, 2, w - 6, h - 6, r, fill=self.bg_color, outline=COLORS.get("shadow_lighter", "#F2F2F7"), tags="card_bg")
+        # Shadow layer - bottom-right offset
+        self.create_rounded_rect(5, 6, w - 1, h - 2, r, fill="#D1D1D6", outline="", tags="card_bg")
+        # Main card surface
+        self.create_rounded_rect(0, 0, w - 6, h - 8, r, fill=self.bg_color, outline="", tags="card_bg")
         
         # Ensure background is at the bottom so it doesn't cover external items
         self.tag_lower("card_bg")
@@ -444,9 +515,12 @@ class Badge(tk.Canvas):
         self.delete("all")
         w = int(self["width"])
         h = int(self["height"])
-        self.create_rounded_rect(2, 2, w - 2, h - 2, self.corner_radius, fill=self.bg_color, outline="")
+        # Small shadow on bottom-right
+        self.create_rounded_rect(3, 4, w - 1, h - 1, self.corner_radius, fill="#D8D8DC", outline="")
+        # Main badge surface
+        self.create_rounded_rect(0, 0, w - 4, h - 5, self.corner_radius, fill=self.bg_color, outline="")
         font_to_use = self.font or ("Helvetica", 12, "bold")
-        self.create_text(w // 2, h // 2, text=self.text, fill=self.text_color, font=font_to_use)
+        self.create_text((w - 4) // 2, (h - 5) // 2, text=self.text, fill=self.text_color, font=font_to_use)
 
     def create_rounded_rect(self, x1, y1, x2, y2, r, **kwargs):
         """Draw a rounded rectangle polygon."""
@@ -3865,7 +3939,26 @@ By clicking 'I Understand', you acknowledge this data processing."""
                         "Get your key from: https://platform.openai.com/api-keys"
                     )
                     return
-        
+
+            # Check macOS camera permission status before trying to open camera
+            if sys.platform == "darwin":
+                permission_status = check_macos_camera_permission()
+                if permission_status == "denied":
+                    # Permission was previously denied - show dialog to guide user
+                    self._show_camera_permission_denied()
+                    return
+                elif permission_status == "restricted":
+                    # Restricted by parental controls or device policy
+                    messagebox.showerror(
+                        "Camera Restricted",
+                        "Camera access is restricted on this device.\n\n"
+                        "This may be due to parental controls or device policy.\n"
+                        "Please check with your administrator."
+                    )
+                    return
+                # For "not_determined", "authorized", or "unknown" - proceed normally
+                # "not_determined" will trigger the macOS permission prompt when camera opens
+
         # Initialize session (but don't start yet - wait for first detection)
         self.session = Session()
         self.session_started = False  # Will start on first detection
@@ -4712,7 +4805,119 @@ By clicking 'I Understand', you acknowledge this data processing."""
                 subprocess.run(["xdg-open", str(filepath)], check=True)
         except Exception as e:
             logger.error(f"Failed to open file: {e}")
-    
+
+    def _show_camera_permission_denied(self):
+        """
+        Show dialog when macOS camera permission was previously denied.
+
+        Offers to open System Settings directly so user can enable camera access.
+        """
+        # Create a custom dialog with "Open Settings" button
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Camera Permission Required")
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        # Center the dialog
+        dialog.geometry("420x280")
+        dialog.resizable(False, False)
+
+        # Use theme colors
+        colors = COLORS
+        dialog.configure(bg=colors["bg_primary"])
+
+        # Content frame
+        content = tk.Frame(dialog, bg=colors["bg_primary"])
+        content.pack(expand=True, fill=tk.BOTH, padx=30, pady=25)
+
+        # Title
+        title_label = tk.Label(
+            content,
+            text="Camera Access Denied",
+            font=("SF Pro Display", 18, "bold"),
+            fg=colors["text_primary"],
+            bg=colors["bg_primary"]
+        )
+        title_label.pack(pady=(0, 15))
+
+        # Message
+        message = (
+            "BrainDock needs camera access for focus tracking.\n\n"
+            "You previously denied camera permission.\n"
+            "Please enable it in System Settings:"
+        )
+        msg_label = tk.Label(
+            content,
+            text=message,
+            font=("SF Pro Text", 13),
+            fg=colors["text_secondary"],
+            bg=colors["bg_primary"],
+            justify=tk.CENTER
+        )
+        msg_label.pack(pady=(0, 20))
+
+        # Button frame
+        btn_frame = tk.Frame(content, bg=colors["bg_primary"])
+        btn_frame.pack(pady=(0, 10))
+
+        def open_settings_and_close():
+            open_macos_camera_settings()
+            dialog.destroy()
+
+        def just_close():
+            dialog.destroy()
+
+        # Open Settings button - grey like other popup buttons
+        open_btn = tk.Button(
+            btn_frame,
+            text="Open System Settings",
+            font=("SF Pro Text", 13),
+            fg="#1C1C1E",
+            bg="#8E8E93",
+            activeforeground="#1C1C1E",
+            activebackground="#6B7280",
+            relief=tk.FLAT,
+            padx=20,
+            pady=10,
+            command=open_settings_and_close
+        )
+        open_btn.pack(side=tk.LEFT, padx=(0, 10))
+
+        # Cancel button - red
+        cancel_btn = tk.Button(
+            btn_frame,
+            text="Cancel",
+            font=("SF Pro Text", 13),
+            fg="#1C1C1E",
+            bg="#EF4444",
+            activeforeground="#1C1C1E",
+            activebackground="#DC2626",
+            relief=tk.FLAT,
+            padx=20,
+            pady=10,
+            command=just_close
+        )
+        cancel_btn.pack(side=tk.LEFT)
+
+        # Note about restart
+        note_label = tk.Label(
+            content,
+            text="Note: You may need to restart BrainDock after enabling.",
+            font=("SF Pro Text", 11),
+            fg=colors["text_secondary"],
+            bg=colors["bg_primary"]
+        )
+        note_label.pack(pady=(10, 0))
+
+        # Center dialog on parent
+        dialog.update_idletasks()
+        x = self.root.winfo_x() + (self.root.winfo_width() - dialog.winfo_width()) // 2
+        y = self.root.winfo_y() + (self.root.winfo_height() - dialog.winfo_height()) // 2
+        dialog.geometry(f"+{x}+{y}")
+
+        # Wait for dialog to close
+        dialog.wait_window()
+
     def _show_camera_error(self):
         """Show camera access error dialog with platform-specific instructions."""
         if sys.platform == "darwin":
