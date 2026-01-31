@@ -33,29 +33,29 @@ except ImportError:
 # --- Scaling System ---
 
 # Reference dimensions (design target - the original design resolution)
-REFERENCE_WIDTH = 1300
+REFERENCE_WIDTH = 1500
 REFERENCE_HEIGHT = 950
 
 # Minimum window dimensions (larger minimum for readability)
-MIN_WIDTH = 800
+MIN_WIDTH = 950
 MIN_HEIGHT = 680
 
 # Font scaling bounds (base_size, min_size, max_size)
 FONT_BOUNDS = {
-    "timer": (48, 32, 64),      # Base 48pt, min 32, max 64 (reduced from 64)
-    "stat": (20, 14, 26),       # Base 20pt, min 14, max 26 (reduced from 25)
-    "title": (24, 16, 32),      # Base 24pt, min 16, max 32
-    "status": (18, 14, 24),     # Base 18pt, min 14, max 24 (reduced from 24)
-    "body": (14, 11, 18),       # Base 14pt, min 11, max 18
-    "button": (12, 10, 15),     # Base 12pt, min 10, max 15 (reduced for better fit)
-    "small": (12, 10, 16),      # Base 12pt, min 10, max 16
-    "badge": (10, 9, 14),       # Base 10pt, min 9, max 14 (reduced from 12)
-    "caption": (11, 9, 14),     # Base 11pt, min 9, max 14 (reduced from 12)
-    "heading": (24, 16, 32),    # For payment screen
-    "subheading": (18, 14, 24), # For payment screen
-    "input": (14, 11, 18),      # For input fields
-    "body_bold": (14, 11, 18),  # Bold body text
-    "display": (32, 24, 40),    # Large display text
+    "timer": (50, 32, 66),      # Base 50pt, min 32, max 66
+    "stat": (20, 14, 26),       # Base 20pt, min 14, max 26
+    "title": (24, 17, 32),      # Base 24pt, min 17, max 32
+    "status": (18, 14, 24),     # Base 18pt, min 14, max 24
+    "body": (15, 11, 19),       # Base 15pt, min 11, max 19
+    "button": (13, 10, 16),     # Base 13pt, min 10, max 16
+    "small": (13, 10, 17),      # Base 13pt, min 10, max 17
+    "badge": (10, 8, 14),       # Base 10pt, min 8, max 14
+    "caption": (12, 9, 15),     # Base 12pt, min 9, max 15
+    "heading": (26, 18, 34),    # For payment screen (unchanged)
+    "subheading": (20, 15, 26), # For payment screen (unchanged)
+    "input": (16, 12, 20),      # For input fields (unchanged)
+    "body_bold": (16, 12, 20),  # Bold body text (unchanged)
+    "display": (34, 26, 44),    # Large display text (unchanged)
 }
 
 # Which font keys use serif (display) vs sans (interface)
@@ -138,9 +138,15 @@ class ScalingManager:
         target_width = min(int(self._screen_width * 0.75), REFERENCE_WIDTH)
         target_height = min(int(self._screen_height * 0.8), REFERENCE_HEIGHT)
         
-        # Ensure minimum size
+        # Ensure minimum size (but only if screen is large enough)
         target_width = max(target_width, MIN_WIDTH)
         target_height = max(target_height, MIN_HEIGHT)
+        
+        # Final safeguard: never exceed 95% of screen to prevent overflow
+        max_width = int(self._screen_width * 0.95)
+        max_height = int(self._screen_height * 0.95)
+        target_width = min(target_width, max_width)
+        target_height = min(target_height, max_height)
         
         return target_width, target_height
     
@@ -368,14 +374,14 @@ def _get_font_tuple(family_type: str, size: int, weight: str = "normal") -> tupl
 
 # FONTS dict for backward compatibility with existing code
 FONTS = {
-    "display": (get_font_serif(), 32, "bold"),
-    "heading": (get_font_serif(), 24, "bold"),
-    "subheading": (get_font_serif(), 18),
-    "body": (get_font_sans(), 14),
-    "body_bold": (get_font_sans(), 14, "bold"),
-    "caption": (get_font_sans(), 12, "bold"),
-    "small": (get_font_sans(), 12),
-    "input": (get_font_sans(), 14),
+    "display": (get_font_serif(), 34, "bold"),
+    "heading": (get_font_serif(), 26, "bold"),
+    "subheading": (get_font_serif(), 20),
+    "body": (get_font_sans(), 16),
+    "body_bold": (get_font_sans(), 16, "bold"),
+    "caption": (get_font_sans(), 13, "bold"),
+    "small": (get_font_sans(), 14),
+    "input": (get_font_sans(), 16),
 }
 
 
@@ -598,16 +604,19 @@ class StyledEntry(ctk.CTkFrame):
         )
         self.entry.pack(fill="x")
         
-        # Error/success label
+        # Error/success label (no fixed height - allows dynamic sizing)
         self.error_label = ctk.CTkLabel(
             self,
             text=" ",
             text_color=COLORS["status_gadget"],
             font=get_ctk_font("small"),
             anchor="w",
-            height=20
+            justify="left"
         )
         self.error_label.pack(fill="x", pady=(2, 0))
+        
+        # Bind configure event to update wraplength dynamically
+        self.error_label.bind("<Configure>", self._update_wraplength)
         
         # Bind events
         self.entry.bind("<Return>", self._on_return)
@@ -637,6 +646,14 @@ class StyledEntry(ctk.CTkFrame):
         self.error_label.configure(text=" ")
         self.entry.configure(border_color=COLORS["accent"] if self.entry == self.focus_get() else COLORS["input_bg"])
         self._has_feedback = False
+    
+    def _update_wraplength(self, event=None):
+        """Update the wraplength of error_label to match the widget width."""
+        # Get the actual width of the label, with some padding
+        width = self.error_label.winfo_width()
+        if width > 1:  # Only update if we have a valid width
+            # Leave some margin to prevent edge clipping
+            self.error_label.configure(wraplength=max(100, width - 10))
     
     def _on_focus_in(self, event):
         """Handle focus in."""

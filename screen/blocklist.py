@@ -224,12 +224,16 @@ class Blocklist:
     _patterns_to_remove: List[str] = field(default_factory=list, repr=False)
     
     def __post_init__(self):
-        """Initialize with default enabled categories if empty."""
+        """Initialize with default enabled categories and quick sites if empty."""
         if not self.enabled_categories:
             self.enabled_categories = {
                 cat_id for cat_id, cat_data in PRESET_CATEGORIES.items()
                 if cat_data.get("default_enabled", False)
             }
+        
+        # Enable all 6 quick sites by default
+        if not self.enabled_quick_sites:
+            self.enabled_quick_sites = set(QUICK_SITES.keys())
         
         # Migrate legacy custom_patterns to appropriate fields
         if self.custom_patterns:

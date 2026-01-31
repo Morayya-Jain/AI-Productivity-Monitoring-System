@@ -591,7 +591,10 @@ class RoundedButton(tk.Canvas):
         fg_color = fg_color or text_color or COLORS["text_white"]
         corner_radius = corner_radius or radius
 
-        parent_bg = parent.cget("bg") if hasattr(parent, "cget") else COLORS["bg_primary"]
+        try:
+            parent_bg = parent.cget("bg") if hasattr(parent, "cget") else COLORS["bg_primary"]
+        except Exception:
+            parent_bg = COLORS["bg_primary"]
         super().__init__(parent, width=width, height=height, bg=parent_bg, highlightthickness=0, **kwargs)
 
         self.command = command
@@ -729,6 +732,7 @@ class IconButton(tk.Canvas):
         self.command = command
         self.size = size
         self.bg_color = bg_color
+        self._initial_bg_color = bg_color  # Store initial state that never changes
         self.hover_color = hover_color
         self.icon_color = icon_color
         self.corner_radius = corner_radius
@@ -933,10 +937,11 @@ class IconButton(tk.Canvas):
             self.draw(pressed=True)
             self.update_idletasks()
             self.command()
-            # Reset hover state after command (popup may have stolen focus)
-            if self.winfo_exists() and hasattr(self, "_original_bg"):
-                self.bg_color = self._original_bg
-                self.after(100, lambda: self.draw(pressed=False) if self.winfo_exists() else None)
+            # Reset to initial (non-hover) state after command
+            # The popup may have stolen focus, preventing _on_leave from firing
+            if self.winfo_exists():
+                self.bg_color = self._initial_bg_color
+                self.draw(pressed=False)
     
     def _on_enter(self, event):
         """Apply hover effect."""
@@ -1812,6 +1817,25 @@ class BrainDockGUI:
             family=font_interface, size=get_scaled_size("body"), weight="normal"
         )
     
+    def _font_to_tuple(self, font: tkfont.Font) -> tuple:
+        """
+        Convert a tkinter Font object to a tuple for CustomTkinter widgets.
+        
+        CTk widgets don't accept tkfont.Font objects, they need tuples like
+        ('family', size) or ('family', size, 'bold').
+        
+        Args:
+            font: The tkinter Font object to convert.
+            
+        Returns:
+            Tuple suitable for CTk widget font parameter.
+        """
+        family = font.cget("family")
+        size = font.cget("size")
+        weight = font.cget("weight")
+        if weight == "bold":
+            return (family, size, "bold")
+        return (family, size)
     
     def _on_resize(self, event):
         """
@@ -2544,6 +2568,42 @@ class BrainDockGUI:
         main_container = ctk.CTkFrame(settings_window, fg_color=COLORS["bg_primary"])
         main_container.pack(fill=tk.BOTH, expand=True)
         
+        # --- Fixed buttons at bottom - PACK FIRST with side=BOTTOM to reserve space ---
+        button_frame = ctk.CTkFrame(main_container, fg_color=COLORS["bg_primary"])
+        button_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=(15, 20), padx=40)
+        
+        # Center the buttons
+        button_container = ctk.CTkFrame(button_frame, fg_color=COLORS["bg_primary"])
+        button_container.pack()
+        
+        save_btn = RoundedButton(
+            button_container,
+            text="Save Settings",
+            command=lambda: self._save_blocklist_settings(settings_window),
+            bg_color=COLORS["button_start"],
+            hover_color=COLORS["button_start_hover"],
+            fg_color=COLORS["text_white"],
+            font=self.font_button,
+            corner_radius=10,
+            width=160,
+            height=48
+        )
+        save_btn.pack(side=tk.LEFT, padx=(0, 15))
+        
+        cancel_btn = RoundedButton(
+            button_container,
+            text="Cancel",
+            command=settings_window.destroy,
+            bg_color=COLORS["button_pause"],
+            hover_color=COLORS["button_pause_hover"],
+            fg_color=COLORS["text_white"],
+            font=self.font_button,
+            corner_radius=10,
+            width=110,
+            height=48
+        )
+        cancel_btn.pack(side=tk.LEFT)
+        
         # --- Scrollable content area using CTkScrollableFrame ---
         # CTkScrollableFrame handles mousewheel/trackpad scrolling automatically
         scrollable_frame = ctk.CTkScrollableFrame(
@@ -2552,48 +2612,45 @@ class BrainDockGUI:
             scrollbar_button_color=COLORS["text_secondary"],
             scrollbar_button_hover_color=COLORS["accent_primary"]
         )
-        scrollable_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(20, 0))
+        scrollable_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(5, 10))
         
         # Set up natural scrolling (cross-platform, physics-based momentum)
         natural_scroller = setup_natural_scroll(scrollable_frame, settings_window)
         
         # --- Content inside scrollable frame ---
         content_padding = ctk.CTkFrame(scrollable_frame, fg_color=COLORS["bg_primary"])
-        content_padding.pack(fill=tk.BOTH, expand=True, padx=20)
+        content_padding.pack(fill=tk.BOTH, expand=True, padx=15)
         
         # Title
-        title = tk.Label(
+        title = ctk.CTkLabel(
             content_padding,
             text="Screen Settings",
-            font=self.font_title,
-            fg=COLORS["accent_primary"],
-            bg=COLORS["bg_primary"]
+            font=self._font_to_tuple(self.font_title),
+            text_color=COLORS["accent_primary"]
         )
-        title.pack(pady=(0, 5))
+        title.pack(pady=(0, 3))
         
-        subtitle = tk.Label(
+        subtitle = ctk.CTkLabel(
             content_padding,
-            text="Configure which sites/apps to notify you about",
-            font=self.font_small,
-            fg=COLORS["text_secondary"],
-            bg=COLORS["bg_primary"]
+            text="Select sites/apps categorised as distractions",
+            font=self._font_to_tuple(self.font_small),
+            text_color=COLORS["text_secondary"]
         )
-        subtitle.pack(pady=(0, 20))
+        subtitle.pack(pady=(0, 15))
         
         # Quick Select section
-        quick_sites_label = tk.Label(
+        quick_sites_label = ctk.CTkLabel(
             content_padding,
             text="Quick Select",
-            font=(get_font_sans(), 16, "bold"),
-            fg=COLORS["text_primary"],
-            bg=COLORS["bg_primary"]
+            font=(get_font_sans(), 18, "bold"),
+            text_color=COLORS["text_primary"]
         )
         quick_sites_label.pack(anchor="w", pady=(0, 10))
         
         # Quick site toggles - two-column layout
         self.quick_site_vars = {}
-        quick_sites_frame = tk.Frame(content_padding, bg=COLORS["bg_primary"])
-        quick_sites_frame.pack(fill=tk.X, pady=(0, 15))
+        quick_sites_frame = ctk.CTkFrame(content_padding, fg_color=COLORS["bg_primary"])
+        quick_sites_frame.pack(fill=tk.X, pady=(0, 0))
         
         # Configure two columns with equal weight
         quick_sites_frame.columnconfigure(0, weight=1)
@@ -2618,190 +2675,137 @@ class BrainDockGUI:
             var = tk.BooleanVar(value=site_id in self.blocklist.enabled_quick_sites)
             self.quick_site_vars[site_id] = var
             
-            cb = tk.Checkbutton(
+            cb = ctk.CTkCheckBox(
                 quick_sites_frame,
                 text=site_data["name"],
                 variable=var,
-                font=(get_font_sans(), 14),
-                fg=COLORS["text_primary"],
-                bg=COLORS["bg_primary"],
-                selectcolor=COLORS["bg_secondary"],
-                activebackground=COLORS["bg_primary"],
-                activeforeground=COLORS["text_primary"],
+                font=(get_font_sans(), 16),
+                text_color=COLORS["text_primary"],
+                fg_color=COLORS["accent_primary"],
+                hover_color=COLORS["text_secondary"],
+                border_color=COLORS["text_secondary"],
                 command=lambda s=site_id, v=var: self._toggle_quick_site(s, v.get())
             )
             cb.grid(row=row, column=col, sticky="w", pady=3, padx=(0, 20))
         
         # --- Custom URLs section ---
-        urls_label = tk.Label(
+        urls_label = ctk.CTkLabel(
             content_padding,
             text="Custom URLs/Domains",
-            font=(get_font_sans(), 16, "bold"),
-            fg=COLORS["text_primary"],
-            bg=COLORS["bg_primary"]
+            font=(get_font_sans(), 18, "bold"),
+            text_color=COLORS["text_primary"]
         )
-        urls_label.pack(anchor="w", pady=(10, 5))
+        urls_label.pack(anchor="w", pady=(25, 5))
         
-        urls_help = tk.Label(
+        urls_help = ctk.CTkLabel(
             content_padding,
-            text="Add website URLs to notify you about (e.g., example.com)",
-            font=self.font_small,
-            fg=COLORS["text_secondary"],
-            bg=COLORS["bg_primary"]
+            text="Add more website URLs as distractions (e.g., example.com)",
+            font=self._font_to_tuple(self.font_small),
+            text_color=COLORS["text_secondary"]
         )
         urls_help.pack(anchor="w", pady=(0, 5))
         
         # URLs text area
-        urls_frame = tk.Frame(content_padding, bg=COLORS["bg_secondary"], padx=1, pady=1)
-        urls_frame.pack(fill=tk.X, pady=(0, 5))
-        
-        self.custom_urls_text = tk.Text(
-            urls_frame,
-            font=self.font_small,
-            fg=COLORS["text_primary"],
-            bg=COLORS["bg_secondary"],
-            insertbackground=COLORS["text_primary"],
-            height=3,
-            wrap=tk.WORD,
-            relief=tk.FLAT,
-            padx=10,
-            pady=10
+        self.custom_urls_text = ctk.CTkTextbox(
+            content_padding,
+            font=self._font_to_tuple(self.font_small),
+            text_color=COLORS["text_primary"],
+            fg_color=COLORS["bg_secondary"],
+            height=70,
+            wrap="word",
+            corner_radius=8,
+            border_width=1,
+            border_color=COLORS["border"]
         )
-        self.custom_urls_text.pack(fill=tk.X)
+        self.custom_urls_text.pack(fill=tk.X, pady=(0, 0))
         
         # URL validation status label
-        self.url_validation_label = tk.Label(
+        self.url_validation_label = ctk.CTkLabel(
             content_padding,
             text="",
-            font=self.font_small,
-            fg=COLORS["text_secondary"],
-            bg=COLORS["bg_primary"],
+            font=self._font_to_tuple(self.font_small),
+            text_color=COLORS["text_secondary"]
         )
         self.url_validation_label.pack(anchor="w")
         self.url_validation_tooltip = Tooltip(self.url_validation_label, "")
         
         # Populate with current custom URLs
         if self.blocklist.custom_urls:
-            self.custom_urls_text.insert("1.0", "\n".join(self.blocklist.custom_urls))
+            self.custom_urls_text.insert("0.0", "\n".join(self.blocklist.custom_urls))
         
         # --- Custom Apps section ---
-        apps_label = tk.Label(
+        apps_label = ctk.CTkLabel(
             content_padding,
             text="Custom App Names",
-            font=(get_font_sans(), 16, "bold"),
-            fg=COLORS["text_primary"],
-            bg=COLORS["bg_primary"]
+            font=(get_font_sans(), 18, "bold"),
+            text_color=COLORS["text_primary"]
         )
-        apps_label.pack(anchor="w", pady=(15, 5))
+        apps_label.pack(anchor="w", pady=(5, 5))
         
-        apps_help = tk.Label(
+        apps_help = ctk.CTkLabel(
             content_padding,
-            text="Add desktop app names to notify you about (e.g., Steam, Discord)",
-            font=self.font_small,
-            fg=COLORS["text_secondary"],
-            bg=COLORS["bg_primary"]
+            text="Add more app names as distractions (e.g., Steam, Discord)",
+            font=self._font_to_tuple(self.font_small),
+            text_color=COLORS["text_secondary"]
         )
         apps_help.pack(anchor="w", pady=(0, 5))
         
         # Apps text area
-        apps_frame = tk.Frame(content_padding, bg=COLORS["bg_secondary"], padx=1, pady=1)
-        apps_frame.pack(fill=tk.X, pady=(0, 5))
-        
-        self.custom_apps_text = tk.Text(
-            apps_frame,
-            font=self.font_small,
-            fg=COLORS["text_primary"],
-            bg=COLORS["bg_secondary"],
-            insertbackground=COLORS["text_primary"],
-            height=3,
-            wrap=tk.WORD,
-            relief=tk.FLAT,
-            padx=10,
-            pady=10
+        self.custom_apps_text = ctk.CTkTextbox(
+            content_padding,
+            font=self._font_to_tuple(self.font_small),
+            text_color=COLORS["text_primary"],
+            fg_color=COLORS["bg_secondary"],
+            height=70,
+            wrap="word",
+            corner_radius=8,
+            border_width=1,
+            border_color=COLORS["border"]
         )
-        self.custom_apps_text.pack(fill=tk.X)
+        self.custom_apps_text.pack(fill=tk.X, pady=(0, 0))
         
         # App validation status label
-        self.app_validation_label = tk.Label(
+        self.app_validation_label = ctk.CTkLabel(
             content_padding,
             text="",
-            font=self.font_small,
-            fg=COLORS["text_secondary"],
-            bg=COLORS["bg_primary"],
+            font=self._font_to_tuple(self.font_small),
+            text_color=COLORS["text_secondary"]
         )
         self.app_validation_label.pack(anchor="w")
         self.app_validation_tooltip = Tooltip(self.app_validation_label, "")
         
         # Populate with current custom apps
         if self.blocklist.custom_apps:
-            self.custom_apps_text.insert("1.0", "\n".join(self.blocklist.custom_apps))
+            self.custom_apps_text.insert("0.0", "\n".join(self.blocklist.custom_apps))
         
         # Bind validation on text change
         self.custom_urls_text.bind("<KeyRelease>", lambda e: self._validate_urls_realtime())
         self.custom_apps_text.bind("<KeyRelease>", lambda e: self._validate_apps_realtime())
         
         # AI Fallback option
-        ai_frame = tk.Frame(content_padding, bg=COLORS["bg_primary"])
-        ai_frame.pack(fill=tk.X, pady=(15, 20))
+        ai_frame = ctk.CTkFrame(content_padding, fg_color=COLORS["bg_primary"])
+        ai_frame.pack(fill=tk.X, pady=(15, 15))
         
         self.ai_fallback_var = tk.BooleanVar(value=self.use_ai_fallback)
-        ai_cb = tk.Checkbutton(
+        ai_cb = ctk.CTkCheckBox(
             ai_frame,
             text="Enable AI Screenshot Analysis (disabled by default)",
             variable=self.ai_fallback_var,
-            font=self.font_small,
-            fg=COLORS["text_secondary"],
-            bg=COLORS["bg_primary"],
-            selectcolor=COLORS["bg_secondary"],
-            activebackground=COLORS["bg_primary"],
-            activeforeground=COLORS["text_secondary"],
+            font=self._font_to_tuple(self.font_small),
+            text_color=COLORS["text_secondary"],
+            fg_color=COLORS["accent_primary"],
+            hover_color=COLORS["text_secondary"],
+            border_color=COLORS["text_secondary"]
         )
         ai_cb.pack(anchor="w")
         
-        ai_help = tk.Label(
+        ai_help = ctk.CTkLabel(
             ai_frame,
             text="⚠️ Takes screenshots - only use if default screen sharing fails",
-            font=self.font_small,
-            fg=COLORS["accent_warm"],
-            bg=COLORS["bg_primary"]
+            font=self._font_to_tuple(self.font_small),
+            text_color=COLORS["accent_warm"]
         )
         ai_help.pack(anchor="w", padx=(24, 0))
-        
-        # --- Fixed buttons at bottom (outside scrollable area) ---
-        button_frame = tk.Frame(main_container, bg=COLORS["bg_primary"])
-        button_frame.pack(fill=tk.X, pady=(15, 20), padx=40)
-        
-        # Center the buttons
-        button_container = tk.Frame(button_frame, bg=COLORS["bg_primary"])
-        button_container.pack()
-        
-        save_btn = RoundedButton(
-            button_container,
-            text="Save Settings",
-            command=lambda: self._save_blocklist_settings(settings_window),
-            bg_color=COLORS["button_start"],
-            hover_color=COLORS["button_start_hover"],
-            fg_color=COLORS["text_white"],
-            font=self.font_button,
-            corner_radius=10,
-            width=160,
-            height=48
-        )
-        save_btn.pack(side=tk.LEFT, padx=(0, 15))
-        
-        cancel_btn = RoundedButton(
-            button_container,
-            text="Cancel",
-            command=settings_window.destroy,  # <Destroy> event will cleanup scroll bindings
-            bg_color=COLORS["button_pause"],
-            hover_color=COLORS["button_pause_hover"],
-            fg_color=COLORS["text_white"],
-            font=self.font_button,
-            corner_radius=10,
-            width=110,
-            height=48
-        )
-        cancel_btn.pack(side=tk.LEFT)
     
     def _toggle_category(self, category_id: str, enabled: bool):
         """
@@ -2838,9 +2842,9 @@ class BrainDockGUI:
             cat_data: Category data dictionary with patterns
         """
         # Create a small popup window - scale based on screen size
-        sites_popup = tk.Toplevel(self.root)
+        sites_popup = ctk.CTkToplevel(self.root)
         sites_popup.title(f"{cat_data['name']} Sites")
-        sites_popup.configure(bg=COLORS["bg_primary"])
+        sites_popup.configure(fg_color=COLORS["bg_primary"])
         
         # Calculate scaled popup size based on screen
         popup_width, popup_height = self.scaling_manager.get_popup_size(320, 320)
@@ -2859,49 +2863,47 @@ class BrainDockGUI:
         sites_popup.focus_set()
         
         # Main container
-        container = tk.Frame(sites_popup, bg=COLORS["bg_primary"])
+        container = ctk.CTkFrame(sites_popup, fg_color=COLORS["bg_primary"])
         container.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
         
         # Title
-        title = tk.Label(
+        title = ctk.CTkLabel(
             container,
             text=cat_data['name'],
-            font=self.font_status,
-            fg=COLORS["accent_primary"],
-            bg=COLORS["bg_primary"]
+            font=self._font_to_tuple(self.font_status),
+            text_color=COLORS["accent_primary"]
         )
         title.pack()
         
-        desc = tk.Label(
+        desc = ctk.CTkLabel(
             container,
             text=cat_data.get('description', ''),
-            font=self.font_small,
-            fg=COLORS["text_secondary"],
-            bg=COLORS["bg_primary"]
+            font=self._font_to_tuple(self.font_small),
+            text_color=COLORS["text_secondary"]
         )
         desc.pack(pady=(0, 10))
         
-        # Sites list using a Listbox
-        list_frame = tk.Frame(container, bg=COLORS["bg_secondary"], highlightbackground=COLORS["border"], highlightthickness=1)
+        # Sites list using CTkScrollableFrame with labels
+        list_frame = ctk.CTkScrollableFrame(
+            container,
+            fg_color=COLORS["bg_secondary"],
+            corner_radius=8,
+            border_width=1,
+            border_color=COLORS["border"]
+        )
         list_frame.pack(fill=tk.BOTH, expand=True)
         
-        # Use Listbox for site listing
-        sites_listbox = tk.Listbox(
-            list_frame,
-            font=self.font_small,
-            fg=COLORS["text_primary"],
-            bg=COLORS["bg_secondary"],
-            selectbackground=COLORS["bg_tertiary"],
-            selectforeground=COLORS["text_primary"],
-            highlightthickness=0,
-            bd=0,
-            relief=tk.FLAT
-        )
-        sites_listbox.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        
-        # Insert all sites
+        # Insert all sites as labels
+        small_font_tuple = self._font_to_tuple(self.font_small)
         for pattern in cat_data['patterns']:
-            sites_listbox.insert(tk.END, f"  • {pattern}")
+            site_label = ctk.CTkLabel(
+                list_frame,
+                text=f"  • {pattern}",
+                font=small_font_tuple,
+                text_color=COLORS["text_primary"],
+                anchor="w"
+            )
+            site_label.pack(fill=tk.X, padx=5, pady=2)
         
         # Define close function
         def close_popup():
@@ -3625,9 +3627,9 @@ class BrainDockGUI:
         Updates the validation label with status/warnings.
         """
         try:
-            urls_text = self.custom_urls_text.get("1.0", tk.END).strip()
+            urls_text = self.custom_urls_text.get("0.0", "end").strip()
             if not urls_text:
-                self.url_validation_label.config(text="", fg=COLORS["text_secondary"])
+                self.url_validation_label.configure(text="", text_color=COLORS["text_secondary"])
                 return
             
             urls = [u.strip() for u in urls_text.split("\n") if u.strip()]
@@ -3648,26 +3650,26 @@ class BrainDockGUI:
             if errors:
                 short_text = f"❌ {len(errors)} invalid: {errors[0][:40]}..."
                 full_text = "Invalid URLs:\n• " + "\n• ".join(errors)
-                self.url_validation_label.config(text=short_text, fg=COLORS["status_gadget"])
+                self.url_validation_label.configure(text=short_text, text_color=COLORS["status_gadget"])
                 self.url_validation_tooltip.update_text(full_text)
             elif warnings:
                 short_text = f"⚠️ {len(warnings)} warning(s): {warnings[0][:35]}..."
                 full_text = "Warnings:\n• " + "\n• ".join(warnings)
-                self.url_validation_label.config(text=short_text, fg=COLORS["accent_warm"])
+                self.url_validation_label.configure(text=short_text, text_color=COLORS["accent_warm"])
                 self.url_validation_tooltip.update_text(full_text)
             elif valid_count > 0:
-                self.url_validation_label.config(
+                self.url_validation_label.configure(
                     text=f"✓ {valid_count} URL(s) valid",
-                    fg=COLORS["status_focused"]  # Green
+                    text_color=COLORS["status_focused"]  # Green
                 )
                 self.url_validation_tooltip.update_text("")
             else:
-                self.url_validation_label.config(text="", fg=COLORS["text_secondary"])
+                self.url_validation_label.configure(text="", text_color=COLORS["text_secondary"])
                 self.url_validation_tooltip.update_text("")
                 
         except Exception as e:
             logger.error(f"Error in real-time URL validation: {e}")
-            self.url_validation_label.config(text="", fg=COLORS["text_secondary"])
+            self.url_validation_label.configure(text="", text_color=COLORS["text_secondary"])
             self.url_validation_tooltip.update_text("")
     
     def _validate_apps_realtime(self):
@@ -3676,9 +3678,9 @@ class BrainDockGUI:
         Updates the validation label with status/warnings.
         """
         try:
-            apps_text = self.custom_apps_text.get("1.0", tk.END).strip()
+            apps_text = self.custom_apps_text.get("0.0", "end").strip()
             if not apps_text:
-                self.app_validation_label.config(text="", fg=COLORS["text_secondary"])
+                self.app_validation_label.configure(text="", text_color=COLORS["text_secondary"])
                 return
             
             apps = [a.strip() for a in apps_text.split("\n") if a.strip()]
@@ -3699,29 +3701,29 @@ class BrainDockGUI:
             if errors:
                 short_text = f"❌ {len(errors)} invalid: {errors[0][:40]}..."
                 full_text = "Invalid apps:\n• " + "\n• ".join(errors)
-                self.app_validation_label.config(text=short_text, fg=COLORS["status_gadget"])
+                self.app_validation_label.configure(text=short_text, text_color=COLORS["status_gadget"])
                 self.app_validation_tooltip.update_text(full_text)
             elif warnings:
                 short_text = f"⚠️ {len(warnings)} warning(s): {warnings[0][:35]}..."
                 full_text = "Warnings:\n• " + "\n• ".join(warnings)
-                self.app_validation_label.config(text=short_text, fg=COLORS["accent_warm"])
+                self.app_validation_label.configure(text=short_text, text_color=COLORS["accent_warm"])
                 self.app_validation_tooltip.update_text(full_text)
             elif valid_count > 0:
-                self.app_validation_label.config(
+                self.app_validation_label.configure(
                     text=f"✓ {valid_count} app(s) valid",
-                    fg=COLORS["status_focused"]  # Green
+                    text_color=COLORS["status_focused"]  # Green
                 )
                 self.app_validation_tooltip.update_text("")
             else:
-                self.app_validation_label.config(text="", fg=COLORS["text_secondary"])
+                self.app_validation_label.configure(text="", text_color=COLORS["text_secondary"])
                 self.app_validation_tooltip.update_text("")
                 
         except Exception as e:
             logger.error(f"Error in real-time app validation: {e}")
-            self.app_validation_label.config(text="", fg=COLORS["text_secondary"])
+            self.app_validation_label.configure(text="", text_color=COLORS["text_secondary"])
             self.app_validation_tooltip.update_text("")
     
-    def _save_blocklist_settings(self, settings_window: tk.Toplevel):
+    def _save_blocklist_settings(self, settings_window: ctk.CTkToplevel):
         """
         Save blocklist settings and close the dialog.
         Validates URLs and apps separately, handles duplicates gracefully.
@@ -3730,7 +3732,7 @@ class BrainDockGUI:
             settings_window: The settings window to close
         """
         # --- Process URLs ---
-        urls_text = self.custom_urls_text.get("1.0", tk.END).strip()
+        urls_text = self.custom_urls_text.get("0.0", "end").strip()
         raw_urls = [u.strip().lower() for u in urls_text.split("\n") if u.strip()]
         
         valid_urls = []
@@ -3747,7 +3749,7 @@ class BrainDockGUI:
                     url_warnings.append(msg)
         
         # --- Process Apps ---
-        apps_text = self.custom_apps_text.get("1.0", tk.END).strip()
+        apps_text = self.custom_apps_text.get("0.0", "end").strip()
         raw_apps = [a.strip() for a in apps_text.split("\n") if a.strip()]
         
         valid_apps = []
@@ -3879,10 +3881,11 @@ class BrainDockGUI:
         
         # Calculate scaled popup size with minimum height to ensure buttons visible
         window_width, window_height = self.scaling_manager.get_popup_size(
-            680, 640, min_width=480, min_height=520
+            680, 720, min_width=500, min_height=620
         )
         tutorial_window.geometry(f"{window_width}x{window_height}")
-        tutorial_window.resizable(False, False)
+        tutorial_window.resizable(True, True)
+        tutorial_window.minsize(500, 620)
         
         # Center on parent window
         tutorial_window.transient(self.root)
@@ -3894,42 +3897,57 @@ class BrainDockGUI:
         
         # Main container with padding
         main_container = ctk.CTkFrame(tutorial_window, fg_color=COLORS["bg_primary"])
-        main_container.pack(fill=tk.BOTH, expand=True, padx=30, pady=25)
+        main_container.pack(fill=tk.BOTH, expand=True, padx=30, pady=(25, 20))
+        
+        # Footer with "Got it" button - PACK FIRST with side=BOTTOM to reserve space
+        footer_frame = ctk.CTkFrame(main_container, fg_color=COLORS["bg_primary"])
+        footer_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=(10, 0))
+        
+        got_it_btn = RoundedButton(
+            footer_frame,
+            text="Got it!",
+            command=tutorial_window.destroy,
+            bg_color=COLORS["button_start"],
+            hover_color=COLORS["button_start_hover"],
+            fg_color=COLORS["text_white"],
+            font=self.font_button,
+            corner_radius=10,
+            width=120,
+            height=44
+        )
+        got_it_btn.pack(pady=5)
         
         # Header frame - groups title and subtitle together for consistent alignment
-        header_frame = tk.Frame(main_container, bg=COLORS["bg_primary"])
-        header_frame.pack(fill=tk.X, pady=(0, 25))
+        header_frame = ctk.CTkFrame(main_container, fg_color=COLORS["bg_primary"])
+        header_frame.pack(side=tk.TOP, fill=tk.X, pady=(0, 20))
         
         # Title and subtitle centered within the same frame
-        title = tk.Label(
+        title = ctk.CTkLabel(
             header_frame,
             text="How to Use BrainDock",
-            font=self.font_title,
-            fg=COLORS["accent_primary"],
-            bg=COLORS["bg_primary"],
-            anchor="center"
+            font=self._font_to_tuple(self.font_title),
+            text_color=COLORS["accent_primary"]
         )
         title.pack(fill=tk.X)
         
-        subtitle = tk.Label(
+        subtitle = ctk.CTkLabel(
             header_frame,
             text="Your AI-powered focus companion",
-            font=self.font_body,
-            fg=COLORS["text_secondary"],
-            bg=COLORS["bg_primary"],
-            anchor="center"
+            font=self._font_to_tuple(self.font_body),
+            text_color=COLORS["text_secondary"]
         )
         subtitle.pack(fill=tk.X, pady=(8, 0))
         
         # --- Scrollable content area using CTkScrollableFrame ---
         # CTkScrollableFrame handles mousewheel/trackpad scrolling automatically
+        # Packed last to fill remaining space between header and footer
         scrollable_frame = ctk.CTkScrollableFrame(
             main_container,
             fg_color=COLORS["bg_primary"],
             scrollbar_button_color=COLORS["text_secondary"],
             scrollbar_button_hover_color=COLORS["accent_primary"]
         )
-        scrollable_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 10))
+        scrollable_frame.pack(fill=tk.BOTH, expand=True, padx=10)
         
         # Content wrapper inside scrollable frame (matches settings pattern)
         content_frame = ctk.CTkFrame(scrollable_frame, fg_color=COLORS["bg_primary"])
@@ -4005,56 +4023,52 @@ class BrainDockGUI:
         
         # Create tutorial sections
         for i, (icon, icon_color, section_title, description) in enumerate(tutorial_sections):
-            section_frame = tk.Frame(content_frame, bg=COLORS["bg_primary"])
-            section_frame.pack(fill=tk.X, pady=(0, 20))
+            section_frame = ctk.CTkFrame(content_frame, fg_color=COLORS["bg_primary"])
+            section_frame.pack(fill=tk.X, pady=(0, 25))
             
             # Icon and title row
-            header_frame = tk.Frame(section_frame, bg=COLORS["bg_primary"])
-            header_frame.pack(fill=tk.X, anchor="w")
+            section_header_frame = ctk.CTkFrame(section_frame, fg_color=COLORS["bg_primary"])
+            section_header_frame.pack(fill=tk.X, anchor="w")
             
             # Icon label with fixed width for consistent alignment
             # Height adapts to content for cross-platform compatibility
             icon_font = get_system_font(size=18, weight="normal")
-            icon_label = tk.Label(
-                header_frame,
+            icon_label = ctk.CTkLabel(
+                section_header_frame,
                 text=icon,
                 font=icon_font,
-                fg=icon_color,
-                bg=COLORS["bg_primary"],
-                width=2,  # Fixed character width for alignment
+                text_color=icon_color,
+                width=30,  # Fixed pixel width for alignment
                 anchor="center"
             )
             icon_label.pack(side=tk.LEFT, padx=(0, 8))
             
             # Section title
-            title_label = tk.Label(
-                header_frame,
+            title_label = ctk.CTkLabel(
+                section_header_frame,
                 text=section_title,
-                font=self.font_status,
-                fg=COLORS["text_primary"],
-                bg=COLORS["bg_primary"]
+                font=self._font_to_tuple(self.font_status),
+                text_color=COLORS["text_primary"]
             )
             title_label.pack(side=tk.LEFT)
             
-            # Description using Label with wraplength for proper text wrapping
-            # Labels handle word wrapping better than Text widgets at small sizes
-            desc_label = tk.Label(
+            # Description using CTkLabel with wraplength for proper text display
+            # No internal scrolling - text wraps and expands naturally
+            desc_label = ctk.CTkLabel(
                 section_frame,
                 text=description,
-                font=self.font_body,
-                fg=COLORS["text_secondary"],
-                bg=COLORS["bg_primary"],
-                justify=tk.LEFT,
+                font=self._font_to_tuple(self.font_body),
+                text_color=COLORS["text_secondary"],
+                justify="left",
                 anchor="nw",
                 wraplength=text_available_width
             )
-            desc_label.pack(fill=tk.X, pady=(8, 0), padx=(40, 0))  # Align with title text
+            desc_label.pack(fill=tk.X, pady=(12, 0), padx=(40, 0))  # Align with title text
             desc_labels.append(desc_label)
         
         # Update description wraplength when content frame is resized
         def _update_desc_wraplength(event):
             """Update description label wraplength when window is resized."""
-            # Calculate new available width based on frame width
             new_width = max(200, event.width - 40)  # Subtract text left padding
             for label in desc_labels:
                 label.configure(wraplength=new_width)
@@ -4062,27 +4076,9 @@ class BrainDockGUI:
         # Bind content frame configure event to update wraplength
         content_frame.bind("<Configure>", _update_desc_wraplength)
         
-        # Footer with "Got it" button
-        footer_frame = tk.Frame(main_container, bg=COLORS["bg_primary"])
-        footer_frame.pack(fill=tk.X, pady=(15, 0))
-        
-        got_it_btn = RoundedButton(
-            footer_frame,
-            text="Got it!",
-            command=tutorial_window.destroy,  # <Destroy> event will cleanup scroll bindings
-            bg_color=COLORS["button_start"],
-            hover_color=COLORS["button_start_hover"],
-            fg_color=COLORS["text_white"],
-            font=self.font_button,
-            corner_radius=10,
-            width=120,
-            height=44
-        )
-        got_it_btn.pack()
-        
         logger.debug("Tutorial popup opened")
     
-    def _close_tutorial(self, tutorial_window: tk.Toplevel, canvas: tk.Canvas):
+    def _close_tutorial(self, tutorial_window: ctk.CTkToplevel, canvas: tk.Canvas):
         """
         Close the tutorial popup and cleanup.
         
@@ -4278,9 +4274,9 @@ class BrainDockGUI:
     def _show_password_dialog(self):
         """Show dialog to enter unlock password."""
         # Create dialog window - scale based on screen size
-        dialog = tk.Toplevel(self.root)
+        dialog = ctk.CTkToplevel(self.root)
         dialog.title("Unlock More Time")
-        dialog.configure(bg=COLORS["bg_primary"])
+        dialog.configure(fg_color=COLORS["bg_primary"])
         dialog.resizable(False, False)
         
         # Size and position - scale based on screen and center
@@ -4294,47 +4290,45 @@ class BrainDockGUI:
         dialog.grab_set()
         
         # Content
-        content = tk.Frame(dialog, bg=COLORS["bg_primary"])
+        content = ctk.CTkFrame(dialog, fg_color=COLORS["bg_primary"])
         content.pack(fill=tk.BOTH, expand=True, padx=25, pady=20)
         
-        title = tk.Label(
+        title = ctk.CTkLabel(
             content,
             text="Enter Password",
-            font=self.font_status,
-            fg=COLORS["text_primary"],
-            bg=COLORS["bg_primary"]
+            font=self._font_to_tuple(self.font_status),
+            text_color=COLORS["text_primary"]
         )
         title.pack(pady=(0, 5))
         
         extension_time = self.usage_limiter.format_time(config.MVP_EXTENSION_SECONDS)
-        subtitle = tk.Label(
+        subtitle = ctk.CTkLabel(
             content,
             text=f"Enter the unlock password to add {extension_time} more",
-            font=self.font_small,
-            fg=COLORS["text_secondary"],
-            bg=COLORS["bg_primary"]
+            font=self._font_to_tuple(self.font_small),
+            text_color=COLORS["text_secondary"]
         )
         subtitle.pack(pady=(0, 15))
         
         # Password entry
         password_var = tk.StringVar()
-        password_entry = tk.Entry(
+        password_entry = ctk.CTkEntry(
             content,
             textvariable=password_var,
             show="•",
-            font=self.font_status,
-            width=25
+            font=self._font_to_tuple(self.font_status),
+            width=200,
+            height=36
         )
         password_entry.pack(pady=(0, 10))
         password_entry.focus_set()
         
         # Error label (hidden initially)
-        error_label = tk.Label(
+        error_label = ctk.CTkLabel(
             content,
             text="",
-            font=self.font_small,
-            fg=COLORS["time_badge_expired"],
-            bg=COLORS["bg_primary"]
+            font=self._font_to_tuple(self.font_small),
+            text_color=COLORS["time_badge_expired"]
         )
         error_label.pack(pady=(0, 10))
         
@@ -4366,24 +4360,30 @@ class BrainDockGUI:
         password_entry.bind("<Return>", lambda e: try_unlock())
         
         # Buttons frame
-        btn_frame = tk.Frame(content, bg=COLORS["bg_primary"])
+        btn_frame = ctk.CTkFrame(content, fg_color=COLORS["bg_primary"])
         btn_frame.pack(fill=tk.X)
         
-        cancel_btn = tk.Button(
+        cancel_btn = ctk.CTkButton(
             btn_frame,
             text="Cancel",
             command=dialog.destroy,
-            font=self.font_small,
-            width=10
+            font=self._font_to_tuple(self.font_small),
+            width=80,
+            height=32,
+            fg_color=COLORS["button_pause"],
+            hover_color=COLORS["button_pause_hover"]
         )
         cancel_btn.pack(side=tk.LEFT, padx=(0, 10))
         
-        unlock_btn = tk.Button(
+        unlock_btn = ctk.CTkButton(
             btn_frame,
             text="Unlock",
             command=try_unlock,
-            font=self.font_small,
-            width=10
+            font=self._font_to_tuple(self.font_small),
+            width=80,
+            height=32,
+            fg_color=COLORS["button_start"],
+            hover_color=COLORS["button_start_hover"]
         )
         unlock_btn.pack(side=tk.RIGHT)
     

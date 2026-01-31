@@ -140,13 +140,14 @@ def load_bundled_fonts() -> bool:
     fonts_dir = get_fonts_dir()
     
     if not fonts_dir.exists():
-        logger.warning(f"Fonts directory not found: {fonts_dir}")
+        # This is expected if custom fonts aren't bundled - use system fonts instead
+        logger.debug(f"Fonts directory not found: {fonts_dir} - using system fonts")
         return False
     
     # Check if font files exist
     font_files = list(fonts_dir.glob("*.ttf"))
     if not font_files:
-        logger.warning(f"No TTF files found in {fonts_dir}")
+        logger.debug(f"No TTF files found in {fonts_dir} - using system fonts")
         return False
     
     logger.debug(f"Loading fonts from: {fonts_dir}")

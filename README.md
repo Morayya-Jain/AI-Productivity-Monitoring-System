@@ -195,8 +195,14 @@ Per [OpenAI's API Data Usage Policy](https://openai.com/policies/api-data-usage-
 
 If you need to reset your Stripe authentication status (e.g., to test the payment flow again or switch accounts), delete the license file:
 
+**macOS:**
 ```bash
 rm ~/Library/Application\ Support/BrainDock/license.json
+```
+
+**Windows (Command Prompt):**
+```cmd
+del "%APPDATA%\BrainDock\license.json"
 ```
 
 This will clear your saved license and prompt you to authenticate again on next launch.

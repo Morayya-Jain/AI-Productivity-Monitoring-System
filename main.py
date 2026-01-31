@@ -437,7 +437,7 @@ Examples:
                 tk.Label(
                     frame,
                     text="⚠️",
-                    font=("Helvetica", 32)
+                    font=("Helvetica", 34)
                 ).pack(pady=(0, 10))
                 
                 tk.Label(
